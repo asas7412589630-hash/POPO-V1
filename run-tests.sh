@@ -19,7 +19,7 @@ test_trace_cache test_log_rotate test_console test_errors test_refusal_detect \
 test_scoring test_scrub test_isolation test_shape_detect test_pool \
 test_pool_stream test_pool_no_duplicate test_source_routing \
 test_model_sources test_shutdown test_answer_verdict test_contract_block \
-test_empty_answer test_sources_integration test_e2e"
+test_empty_answer test_sources_integration test_e2e test_theoretical_features_e2e"
 
 if [ -n "$ONLINE" ]; then
   TESTS="$TESTS test_clients test_concurrency test_drift"

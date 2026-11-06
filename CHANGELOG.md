@@ -13,9 +13,16 @@ versions follow [Semantic Versioning](https://semver.org/).
   stopping, and health checking the proxy across Windows, macOS, and Linux without bash.
 - **PowerShell launcher (`triad-up.ps1`)**: Native launcher for Windows environments.
 - **`AUTHORS.md`**: Formal co-creator and maintainer documentation (Minglink and asas7412589630-hash).
+- **Virtual Real-World E2E Suite (`test_theoretical_features_e2e.py`)**: Comprehensive
+  verification harness asserting 29 critical theoretical claims: multi-model prompt
+  invariants, dynamic refusal recovery, streaming SSE sidecars, context hygiene,
+  multi-tenant accounts, token minting/revocation, and storage bounds.
 
 ### Fixed
 
+- **Trace storage unbounded growth**: Implemented `prune_traces(keep_days)` in `trace_rec.py`
+  with automatic periodic retention pruning (`ARMOR_TRACE_KEEP_DAYS`), closing the known
+  limitation of unbounded daily `.jsonl` accumulation.
 - **Global UTF-8 encoding**: Explicitly enforce `encoding="utf-8"` on all text `open()`
   calls across test suites and core tools, fixing `UnicodeDecodeError` on GBK/CP936 Windows.
 - **Windows permission compatibility**: Fixed POSIX `0o600` permission assertion in
@@ -120,8 +127,8 @@ build existed; nothing from that lineage is supported.
 - `_forward_locked` is 2,149 lines in one function. Splitting it needs a golden
   test recording real upstream traffic first; a refactor without one has already
   cost a debugging cycle.
-- Log rotation covers the request log only. The console trace and debug files grow
-  unbounded in non-ephemeral mode.
+- Log rotation covers the request log and daily trace turns (`prune_traces`). Debug files still grow
+  unbounded in non-ephemeral mode without a prune cron.
 - The console is Traditional Chinese only.
 - WAF-blocked egress IPs are not fixable from inside the proxy.
 

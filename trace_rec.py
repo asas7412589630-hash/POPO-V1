@@ -32,6 +32,8 @@ FINAL_CAP = int(os.environ.get("ARMOR_TRACE_FINAL_CAP", "0"))
 # Referenced, never inlined, past this size: a 1 MB body inside a list response
 # would make the log unusable. The full text stays on disk.
 INLINE_CAP = int(os.environ.get("ARMOR_TRACE_INLINE_CAP", "400000"))
+TRACE_KEEP_DAYS = int(os.environ.get("ARMOR_TRACE_KEEP_DAYS", "14"))
+_last_prune = [0.0]
 
 _lock = threading.Lock()
 _tls = threading.local()
@@ -312,6 +314,13 @@ def finish(text="", meta=None, error=""):
         with _lock:
             with open(_day_file(t["ts"]), "a", encoding="utf-8") as f:
                 f.write(json.dumps(t, ensure_ascii=False) + "\n")
+            now = time.time()
+            if TRACE_KEEP_DAYS > 0 and (now - _last_prune[0]) > 3600:
+                _last_prune[0] = now
+                try:
+                    prune_traces(TRACE_KEEP_DAYS)
+                except Exception:
+                    pass
     except Exception:
         return t.get("id") or ""
     return t.get("id") or ""
@@ -470,3 +479,31 @@ def clients(days=7):
         out.append(e)
     out.sort(key=lambda x: -x["last"])
     return out
+
+
+def prune_traces(keep_days: int = 14) -> int:
+    """Remove daily trace files older than keep_days. Returns count of deleted files."""
+    if keep_days <= 0:
+        return 0
+    d = _dir()
+    if not os.path.isdir(d):
+        return 0
+    cutoff = time.time() - (keep_days * 86400)
+    cutoff_day = time.strftime("%Y-%m-%d", time.localtime(cutoff))
+    removed = 0
+    with _FILE_CACHE_LOCK:
+        try:
+            for fname in os.listdir(d):
+                if fname.endswith(".jsonl") and len(fname) == 16 and fname[:10] < cutoff_day:
+                    path = os.path.join(d, fname)
+                    try:
+                        os.remove(path)
+                        _FILE_CACHE.pop(path, None)
+                        _stat_seen.pop(path, None)
+                        removed += 1
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return removed
+
