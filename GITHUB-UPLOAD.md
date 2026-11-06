@@ -91,7 +91,7 @@ cd /tmp && git clone <你的 repo> t && cd t && ./triad-up
 | 檔案 | 用途 |
 |---|---|
 | `README.md` | 首頁：這是什麼、快速開始、架構圖 |
-| `LICENSE` | MIT |
+| `LICENSE` | CC BY-NC 4.0 |
 | `CHANGELOG.md` | v2.0.0 完整變更記錄（含所有修的洞） |
 | `SECURITY.md` | 威脅模型 + 漏洞回報管道 |
 | `CONTRIBUTING.md` | 貢獻規則（標準庫、測試、註解風格） |

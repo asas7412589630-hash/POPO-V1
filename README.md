@@ -13,7 +13,7 @@ OpenAI 相容 · 多模型人設注入 · 拒答自動重試 · 可零落地運�
 ![Python](https://img.shields.io/badge/python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-22c55e?style=flat-square)
 ![Tests](https://img.shields.io/badge/tests-27%20suites-22c55e?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-c2410c?style=flat-square)
+![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-c2410c?style=flat-square)
 
 </div>
 
@@ -30,7 +30,7 @@ OpenAI 相容 · 多模型人設注入 · 拒答自動重試 · 可零落地運�
 > 使用者對自己的所有操作負全責。作者不對任何誤用、資料損失、法律後果或第三方索賠負責。
 > 專案按「現狀」提供，不附任何明示或暗示的保證。
 >
-> 詳細條款見 [LICENSE](LICENSE)（MIT）與 [SECURITY.md](SECURITY.md)。
+> 詳細條款見 [LICENSE](LICENSE)（CC BY-NC 4.0）與 [SECURITY.md](SECURITY.md)。
 
 ---
 
@@ -483,6 +483,20 @@ curl -H "Authorization: Bearer $API_KEY" \
 
 ## 授權
 
-MIT — 見 [LICENSE](LICENSE)。
+本專案採用 **[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-Hant)**：
+**姓名標示 + 非商業性**。
+
+| 你可以 | 條件 |
+|---|---|
+| 自由使用、修改、分享 | **必須標明出處**（作者 + 原始連結） |
+| 用在個人專案、研究、教學 | **不得用於商業目的** |
+| 二次開發後再發布 | 需註明做了哪些變更，且維持同樣授權 |
+
+**明確禁止商業使用。** 包括但不限於：拿去賣、包進付費產品、當成付費服務的後端、
+放在有廣告的網站上營運。
+
+需要商業授權請另行聯絡。
+
+完整條款見 [LICENSE](LICENSE)。
 
 使用前請重讀最上面的免責聲明。**這個工具本身是中性的，怎麼用取決於你。**

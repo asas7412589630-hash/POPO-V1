@@ -108,6 +108,19 @@ heard "auth", not that rotation happened at all.
 
 ---
 
+## Licensing of contributions
+
+This project is released under **CC BY-NC 4.0** (Attribution-NonCommercial).
+By opening a pull request you agree that your contribution is licensed under the
+same terms.
+
+That means, concretely: **the project cannot be used commercially**, and a
+contribution cannot be relicensed for commercial use without your explicit
+agreement. If you are not comfortable with that, please open an issue describing
+the change instead of a pull request.
+
+---
+
 ## Reporting bugs
 
 Include the version (or commit), platform, and the smallest reproduction you can
