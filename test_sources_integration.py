@@ -125,13 +125,23 @@ def main():
     env.update({
         "ARMOR_PROXY_PORT": str(PX_PORT),
         "ARMOR_BIND": "127.0.0.1",
-        "ARMOR_BASE": HERE,
+        # ARMOR_BASE must be the TEMP dir, not the checkout. The proxy derives
+        # proxy/keys.json, proxy/source_secrets.json and the rest from BASE, so
+        # pointing it at the repo meant every test run wrote a real key record
+        # into the working tree — which then got committed, and made the
+        # "no committed secrets" CI job fail on an otherwise clean push.
+        # Only the code (armor_proxy.py) is read from HERE; all state goes to tmp.
+        "ARMOR_BASE": tmp,
+        # Code lives in HERE; only state is redirected. These are the three the
+        # proxy reads that are NOT derived from BASE.
+        "ARMOR_CONSOLE_DIR": os.path.join(HERE, "console"),
         "ARMOR_SOURCES_FILE": os.path.join(tmp, "sources.json"),
         "ARMOR_SOURCE_SECRETS": os.path.join(tmp, "secrets.json"),
         "ARMOR_ROUTES_FILE": os.path.join(tmp, "routes.json"),
         "ARMOR_ALIAS_FILE": os.path.join(tmp, "aliases.json"),
         "ARMOR_REQUIRE_KEY": "1",
         "ARMOR_CLIENT_KEYS": os.path.join(tmp, "client_keys.txt"),
+        "ARMOR_KEYS_JSON": os.path.join(tmp, "keys.json"),
         "ARMOR_TRACE_DIR": tmp,
         "ARMOR_PANEL_FILE": os.path.join(tmp, "panel.json"),
         "ARMOR_STATE": "0", "ARMOR_ARCHIVE": "0", "ARMOR_CAPTURE_RESP": "0",

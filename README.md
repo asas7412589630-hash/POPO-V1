@@ -477,7 +477,67 @@ curl -H "Authorization: Bearer $API_KEY" \
 3. **無痕模式有沒有漏掉的寫入點？** 我用「唯一標記字串 + 全盤 grep」驗證，但可能還有沒測到的路徑。
 4. **免費主機的實測經驗** — Oracle ARM 缺貨時你都怎麼處理？
 
-提交方式見 [CONTRIBUTING.md](CONTRIBUTING.md)，安全問題請走 [SECURITY.md](SECURITY.md) 的私下管道。
+---
+
+## 路線圖
+
+### 近期（v1.x）
+
+- **更多模型家族** — 目前只調了 GLM / DeepSeek / GPT 三組。接下來想加：
+  - Claude 系列（走中轉）
+  - Llama 3/4
+  - Qwen 3 系列
+  - Kimi / Moonshot
+  - Gemini
+
+  每個家族需要實測調校，不是套通用稿就好。
+
+- **控制台多語言** — 目前只有繁體中文，預計加英文。
+
+- **拆 `_forward_locked`** — 2,149 行一個函式是最大的結構債。要先補 golden test 才敢動。
+
+### 中期
+
+- **設定介面化** — 現在改人設要編輯 `blocks/*.txt`，未來想做線上編輯器。
+
+### 長期：轉型
+
+這個專案最終想做的不只是「本地代理」，而是：
+
+| 形態 | 說明 |
+|---|---|
+| **網站** | 免安裝，註冊即用。填上游 API 就得到破甲後的 endpoint |
+| **桌面軟體** | 一鍵安裝，自帶控制台與系統匣常駐 |
+| **行動 App** | 手機上直接跑，背景常駐 |
+
+目前是**命令列 + 本地網頁控制台**階段。上面的形態都需要解決
+金鑰保管、多租戶隔離、計費（如果走商業模式）這些問題，
+所以會是一個獨立的分支，不是這個 repo 直接改。
+
+> **商業化的部分會另外授權。** 這個 repo 維持 CC BY-NC 4.0，
+> 非商業使用永遠免費。
+
+---
+
+## 回報與聯絡
+
+| 用途 | 管道 |
+|---|---|
+| **錯誤回報** | [開 issue](issues/new?template=bug_report.md) 或來信 |
+| **功能建議** | [開 issue](issues/new?template=feature_request.md) 或來信 |
+| **安全漏洞** | **不要開 issue** — 見 [SECURITY.md](SECURITY.md) 的私下管道 |
+| **商業授權洽談** | 來信 |
+
+**信箱：asas7412589630@gmail.com**
+
+來信請附上：
+
+- 使用的版本（或 commit）
+- 平台（Linux / Termux / macOS / Windows）
+- 重現步驟 —— 有 `curl` 指令最好
+- 相關日誌（`tail -50 logs/triad.log`）
+
+開 issue 前先搜一下有沒有重複的。安全問題請走私下管道，不要公開揭露。
 
 ---
 
@@ -495,8 +555,22 @@ curl -H "Authorization: Bearer $API_KEY" \
 **明確禁止商業使用。** 包括但不限於：拿去賣、包進付費產品、當成付費服務的後端、
 放在有廣告的網站上營運。
 
-需要商業授權請另行聯絡。
+### 商業授權
 
-完整條款見 [LICENSE](LICENSE)（英文法律原文），白話說明見 [LICENSE.zh-Hant.md](LICENSE.zh-Hant.md)。
+需要商業使用請來信洽談：**[asas7412589630@gmail.com](mailto:asas7412589630@gmail.com)**
+
+請在信中說明用途、規模與預期形式，會盡快回覆。
+
+### 檔案
+
+| 檔案 | 內容 |
+|---|---|
+| [LICENSE](LICENSE) | CC BY-NC 4.0 英文法律原文（與 SPDX 官方逐位元組一致） |
+| [LICENSE.zh-Hant.md](LICENSE.zh-Hant.md) | 繁體中文白話摘要（僅供理解，效力以英文為準） |
+
+> **GitHub 側邊欄顯示「Other / NOASSERTION」是正常的。**
+> GitHub 內建只認 13 種授權（MIT、Apache、GPL 系列、CC0…），
+> **CC BY-NC 不在其中**，所以無法自動標示。
+> 授權本身完全有效——以 `LICENSE` 檔的內容為準，不是以側邊欄為準。
 
 使用前請重讀最上面的免責聲明。**這個工具本身是中性的，怎麼用取決於你。**

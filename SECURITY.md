@@ -2,9 +2,14 @@
 
 ## Reporting a vulnerability
 
-Open a private security advisory on this repository (Security → Advisories →
-Report a vulnerability). Please do not open a public issue for anything that
-could let a stranger reach someone's proxy or read their prompts.
+**Two channels, either is fine:**
+
+1. **GitHub private advisory** — Security tab → Advisories → Report a
+   vulnerability. Preferred, because it keeps the report attached to the fix.
+2. **Email** — **asas7412589630@gmail.com**
+
+Please do **not** open a public issue for anything that could let a stranger
+reach someone's proxy or read their prompts.
 
 Include: the version (or commit), the platform, and the smallest reproduction you
 can manage. A `curl` line is ideal.

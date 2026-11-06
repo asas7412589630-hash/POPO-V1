@@ -81,6 +81,17 @@ build existed; nothing from that lineage is supported.
   takes ~25 s to 404 an unknown model — longer than the client timeout, so the
   suite failed in a way that looked like a proxy bug. Now hermetic.
 
+### Project
+
+- **Licence: CC BY-NC 4.0.** Commercial use is prohibited; contact
+  asas7412589630@gmail.com for a commercial licence. Chosen over MIT because the
+  armour text is the part worth protecting, and an MIT grant would let anyone
+  resell it.
+- **Contact** for bug reports, feature requests and security issues:
+  asas7412589630@gmail.com (or a GitHub issue / private advisory).
+- **Roadmap** published in the README: more model families, console i18n,
+  and a longer-term move to a website and desktop application.
+
 ### Known limitations
 
 - `_forward_locked` is 2,149 lines in one function. Splitting it needs a golden
