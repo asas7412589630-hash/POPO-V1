@@ -1,3 +1,5 @@
+**繁體中文** · [English](README.en.md)
+
 <div align="center">
 
 <img src="docs/banner.svg" alt="Prism — 給它一個上游 API，它還你一個破甲後的 API" width="100%">
@@ -567,6 +569,7 @@ curl -H "Authorization: Bearer $API_KEY" \
 |---|---|
 | [LICENSE](LICENSE) | CC BY-NC 4.0 英文法律原文（與 SPDX 官方逐位元組一致） |
 | [LICENSE.zh-Hant.md](LICENSE.zh-Hant.md) | 繁體中文白話摘要（僅供理解，效力以英文為準） |
+| [LICENSE.en.md](LICENSE.en.md) | 英文白話摘要 |
 
 > **GitHub 側邊欄顯示「Other / NOASSERTION」是正常的。**
 > GitHub 內建只認 13 種授權（MIT、Apache、GPL 系列、CC0…），
