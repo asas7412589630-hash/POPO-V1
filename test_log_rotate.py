@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """tracelog 輪轉 + 句柄快取測試。"""
-import sys, os, tempfile, shutil, time, json
+import sys
+import os, os, tempfile, shutil, time, json
 tmp = tempfile.mkdtemp(prefix="trlog_")
 os.environ["ARMOR_SPLIT_LOG_DIR"] = tmp
 os.environ["ARMOR_SPLIT_LOG_MAX"] = "2000"      # 強制快速輪轉
 os.environ["ARMOR_SPLIT_LOG_KEEP"] = "2"
-sys.path.insert(0, "/var/hark/shared/armor_triad")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tracelog as TL
 
 ok = fail = 0

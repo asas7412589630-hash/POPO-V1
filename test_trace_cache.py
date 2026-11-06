@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """trace_rec 快取正確性測試 — 增量讀取不能漏記錄、不能重複、不能讀半行。"""
-import sys, os, tempfile, time, json, shutil
-sys.path.insert(0, "/var/hark/shared/armor_triad")
+import sys
+import os, os, tempfile, time, json, shutil
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 tmp = tempfile.mkdtemp(prefix="trcache_")
 os.environ["ARMOR_TRACE_DIR"] = tmp

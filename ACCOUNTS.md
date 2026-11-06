@@ -25,7 +25,7 @@
 ### 1. 建立第一個帳戶（只有一次）
 
 ```sh
-cd /var/hark/shared/cinder_server
+cd /path/to/cinder-server      # 你解壓的目錄
 ./acct init
 ```
 

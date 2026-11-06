@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 import socket as _s
-sys.path.insert(0, "/var/hark/shared/armor_triad")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import http.client

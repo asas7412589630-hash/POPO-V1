@@ -66,7 +66,12 @@ except Exception:                      # pragma: no cover
 BASE = os.environ.get("ARMOR_BASE") or os.path.dirname(os.path.abspath(__file__))
 PROXY_DIR = os.path.join(BASE, "proxy")
 UPSTREAM = os.environ.get("ARMOR_UPSTREAM_BASE", "https://logfare.ai/v1")
-MEDIA_DIR = os.environ.get("ARMOR_MEDIA_DIR", "/var/hark/shared/armor_media")
+# Falls back INSIDE the install. The old default was an absolute path from the
+# machine this was developed on (/var/hark/shared/armor_media), which does not
+# exist anywhere else — the first image request would try to write into a
+# directory that cannot be created, and fail with a permission error that says
+# nothing about the real cause.
+MEDIA_DIR = os.environ.get("ARMOR_MEDIA_DIR") or os.path.join(BASE, "media")
 IMAGE_MODELS = ["flux-1-schnell", "sdxl-lightning", "flux-2-klein-9b", "flux-2-dev"]
 
 # ---------------------------------------------------------------------------

@@ -8,8 +8,9 @@
  3. 串流後接著一個普通請求，回應內容正確（沒有前一個 body 的殘留）
  4. 連續 20 條串流 + 20 條普通請求交錯，所有回應都完整
 """
-import sys, os, threading, json, time, socket as _s
-sys.path.insert(0, "/var/hark/shared/armor_triad")
+import sys
+import os, os, threading, json, time, socket as _s
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import http.client

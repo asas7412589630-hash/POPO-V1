@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """形狀判定測試 — anthropic body 偵測必須保守（誤判會改寫呼叫端的請求）。"""
-import sys
-sys.path.insert(0, "/var/hark/shared/armor_triad")
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("ARMOR_PROXY_PORT", "1")
 import armor_proxy as AP
 

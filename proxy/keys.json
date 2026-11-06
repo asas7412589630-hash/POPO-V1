@@ -1,3 +1,14 @@
 {
-  "keys": []
+ "keys": [
+  {
+   "id": "3206e6aed7a1",
+   "hash": "625faa3fbbc3d2bd9d6ee7678d04cc5339cb33dc68d9b58451853d60046e226a",
+   "prefix": "test-key-1…",
+   "label": "imported",
+   "enabled": true,
+   "created": 1793961197.9333603,
+   "last_used": 1793961198.3861477,
+   "hits": 11
+  }
+ ]
 }

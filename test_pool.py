@@ -7,8 +7,9 @@
  3. `_pool_drop` 之後池子是空的
  4. 連線在請求前死掉時，_route_request 會自動重連而不是拋錯
 """
-import sys, os, threading, json, time, socket as _s
-sys.path.insert(0, "/var/hark/shared/armor_triad")
+import sys
+import os, os, threading, json, time, socket as _s
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import http.client

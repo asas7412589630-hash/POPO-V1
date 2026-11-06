@@ -19,13 +19,14 @@ import sys
 import time
 import urllib.request
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.environ.get("TRIAD_BASE", "http://127.0.0.1:8412/v1")
 KEY = ""
 try:
     # Read the first REAL token, not the whole file: keyring writes comment
     # lines with an em dash, and putting that in a header raises a latin-1
     # UnicodeEncodeError before the request is sent (measured 2026-11-01).
-    for _ln in list(open("/var/hark/shared/armor_triad/proxy/client_keys.txt")):
+    for _ln in list(open(os.path.join(HERE, "proxy", "client_keys.txt"))):
         _ln = _ln.strip()
         if _ln and not _ln.startswith("#"):
             KEY = _ln
@@ -142,8 +143,8 @@ def main():
             sum(r.get("elapsed") or 0 for r in rows) / len(rows),
             max((r.get("chars") or 0) for r in rows),
             sum(1 for r in rows if (r.get("think") or 0) > 0)))
-    out = "/var/hark/shared/armor_triad/artifacts/drift_%s_%s.json" % (
-        model, time.strftime("%Y%m%d-%H%M%S"))
+    out = os.path.join(HERE, "artifacts", "drift_%s_%s.json" % (
+        model, time.strftime("%Y%m%d-%H%M%S")))
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=1)
