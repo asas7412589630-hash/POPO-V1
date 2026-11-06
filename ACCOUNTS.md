@@ -25,7 +25,7 @@
 ### 1. 建立第一個帳戶（只有一次）
 
 ```sh
-cd /path/to/cinder-server      # 你解壓的目錄
+cd /path/to/prism      # 你解壓的目錄
 ./acct init
 ```
 
@@ -245,7 +245,7 @@ https://<你的隧道>/j/v8GEa1xtJXMX3     只有對話
 ## 檔案位置
 
 ```
-cinder_server/
+prism/
   accounts.py         帳戶 / session / 金鑰歸屬 / 回看記錄 / 用量（21KB）
   acct_http.py        HTTP 介面 + 兩個公開頁的渲染（28KB）
   acct                終端機入口

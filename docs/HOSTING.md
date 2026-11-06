@@ -4,7 +4,7 @@
 
 # 免費託管部署指南
 
-**目標**：把 Cinder Server 放上免費主機，自用不公開，且不留任何記錄。
+**目標**：把 Prism 放上免費主機，自用不公開，且不留任何記錄。
 
 ---
 
@@ -73,11 +73,11 @@ python3 --version    # 需要 3.9+
 
 ```sh
 # 在本機
-scp cinder-server-v2.zip ubuntu@<host>:~
+scp prism-v1.zip ubuntu@<host>:~
 
 # 在伺服器
-unzip cinder-server-v2.zip -d cinder-server
-cd cinder-server
+unzip prism-v1.zip -d prism
+cd prism
 chmod +x triad-up triad-tunnel
 ```
 
@@ -90,23 +90,23 @@ ARMOR_EPHEMERAL=1 ./triad-up
 ### 2.6 用 systemd 常駐
 
 ```sh
-sudo tee /etc/systemd/system/cinder.service > /dev/null <<'EOF'
+sudo tee /etc/systemd/system/prism.service > /dev/null <<'EOF'
 [Unit]
-Description=Cinder proxy (ephemeral)
+Description=Prism proxy (ephemeral)
 After=network.target
 
 [Service]
 Type=simple
 User=ubuntu
-WorkingDirectory=/home/ubuntu/cinder-server
+WorkingDirectory=/home/ubuntu/prism
 Environment=ARMOR_EPHEMERAL=1
 Environment=ARMOR_BIND=127.0.0.1
 Environment=TRIAD_PORT=8412
-ExecStart=/home/ubuntu/cinder-server/run-proxy.sh
+ExecStart=/home/ubuntu/prism/run-proxy.sh
 Restart=always
 RestartSec=3
 # 收緊權限：只給它需要寫的
-ReadWritePaths=/home/ubuntu/cinder-server/logs
+ReadWritePaths=/home/ubuntu/prism/logs
 NoNewPrivileges=true
 
 [Install]
@@ -114,8 +114,8 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now cinder
-sudo systemctl status cinder
+sudo systemctl enable --now prism
+sudo systemctl status prism
 ```
 
 ---
@@ -255,8 +255,8 @@ ssh -N -L 8412:127.0.0.1:8412 ubuntu@<伺服器>
 ```sh
 # 伺服器上
 cloudflared tunnel login
-cloudflared tunnel create cinder
-cloudflared tunnel run --url http://127.0.0.1:8412 cinder
+cloudflared tunnel create prism
+cloudflared tunnel run --url http://127.0.0.1:8412 prism
 ```
 
 然後在 Cloudflare Zero Trust 設 **Access Policy**：只允許你的 email。
@@ -288,8 +288,8 @@ cloudflared tunnel run --url http://127.0.0.1:8412 cinder
 ```sh
 # 最小可用部署（Oracle ARM，無痕，不對外）
 sudo apt install -y python3 unzip
-unzip cinder-server-v2.zip -d ~/cinder-server
-cd ~/cinder-server && chmod +x triad-up triad-tunnel
+unzip prism-v1.zip -d ~/prism
+cd ~/prism && chmod +x triad-up triad-tunnel
 ARMOR_EPHEMERAL=1 ./triad-up
 
 # 從本機連（SSH 隧道）

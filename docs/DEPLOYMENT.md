@@ -15,8 +15,8 @@ one that matches, not the biggest one.
 ## 1 · Local
 
 ```sh
-unzip cinder-server-v2.zip -d cinder-server
-cd cinder-server
+unzip prism-v1.zip -d prism
+cd prism
 chmod +x triad-up triad-deploy triad-tunnel run-proxy.sh run-tunnel.sh
 ./triad-up
 ```
@@ -36,8 +36,8 @@ connects to the server's loopback through SSH.
 
 ```sh
 sudo apt install -y python3 unzip
-unzip cinder-server-v2.zip -d ~/cinder-server
-cd ~/cinder-server && chmod +x triad-up
+unzip prism-v1.zip -d ~/prism
+cd ~/prism && chmod +x triad-up
 ./triad-up                        # binds 127.0.0.1:8412
 ```
 
@@ -57,14 +57,14 @@ Keep it up:
 
 ```sh
 # ~/.ssh/config
-Host cinder
+Host prism
     HostName server.example.com
     User ubuntu
     LocalForward 8412 127.0.0.1:8412
     ServerAliveInterval 30
 ```
 
-then `ssh -N cinder`.
+then `ssh -N prism`.
 
 ---
 
@@ -147,10 +147,10 @@ Clients then use `http://192.168.1.100:8412/v1`.
 ## systemd
 
 ```sh
-./triad-deploy --systemd > /tmp/cinder.service
-sudo mv /tmp/cinder.service /etc/systemd/system/
+./triad-deploy --systemd > /tmp/prism.service
+sudo mv /tmp/prism.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now cinder
+sudo systemctl enable --now prism
 ```
 
 Ready-made units with hardening directives are in
@@ -181,9 +181,9 @@ For a stable hostname you need a domain:
 
 ```sh
 cloudflared tunnel login
-cloudflared tunnel create cinder
-cloudflared tunnel route dns cinder api.example.com
-cloudflared tunnel run --url http://127.0.0.1:8412 cinder
+cloudflared tunnel create prism
+cloudflared tunnel route dns prism api.example.com
+cloudflared tunnel run --url http://127.0.0.1:8412 prism
 ```
 
 Add a Cloudflare Access policy so the URL being public does not mean the proxy is.
@@ -261,7 +261,7 @@ it. WAFs look at IP reputation, TLS fingerprint and behaviour. Order of fixes:
 ./triad-up --status
 kill "$(cat triad.pid)"
 
-unzip -o cinder-server-v2.zip -d .       # -o overwrites code, keeps proxy/
+unzip -o prism-v1.zip -d .       # -o overwrites code, keeps proxy/
 
 ./triad-up
 ```

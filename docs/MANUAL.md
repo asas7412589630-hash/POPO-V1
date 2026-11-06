@@ -2,7 +2,7 @@
 
 ---
 
-# Cinder Server 使用說明書
+# Prism 使用說明書
 
 **版本**：v2 · 2026-11-06
 **內容**：檔案總覽 · 目錄架構 · 安裝啟動 · 四步設定 · 客戶端接法 · 疑難排解
@@ -58,10 +58,10 @@
 程式所有路徑都從自己所在的位置推算（`BASE = 檔案自己的目錄`），所以：
 
 ```
-✅ /sdcard/cinder-server/
-✅ ~/cinder-server/
-✅ C:\cinder-server\
-✅ /opt/cinder-server/
+✅ /sdcard/prism/
+✅ ~/prism/
+✅ C:\prism\
+✅ /opt/prism/
 ```
 
 都能跑。搬移整個資料夾也不會壞——它不會去讀資料夾外面的東西。
@@ -74,22 +74,22 @@
 
 | 平台 | 建議路徑 | 理由 |
 |---|---|---|
-| Android / Termux | `~/cinder-server` | 家目錄有寫入權限 |
-| Linux | `/opt/cinder-server` | 慣例位置，systemd 好設定 |
-| macOS | `~/cinder-server` | 免 sudo |
-| Windows | `C:\cinder-server` | 路徑短，少編碼問題 |
+| Android / Termux | `~/prism` | 家目錄有寫入權限 |
+| Linux | `/opt/prism` | 慣例位置，systemd 好設定 |
+| macOS | `~/prism` | 免 sudo |
+| Windows | `C:\prism` | 路徑短，少編碼問題 |
 
 ## 2.3 解壓步驟
 
 **Linux / macOS / Termux**
 ```sh
-unzip cinder-server-v2.zip -d cinder-server
-cd cinder-server
+unzip prism-v1.zip -d prism
+cd prism
 chmod +x triad-up triad-tunnel run-proxy.sh run-tunnel.sh
 ```
 
 **Windows**
-右鍵 → 解壓縮全部 → 目標 `C:\cinder-server`
+右鍵 → 解壓縮全部 → 目標 `C:\prism`
 （`.sh` 檔在 Windows 用不到，跳過 chmod）
 
 ## 2.4 先確認 Python
@@ -109,7 +109,7 @@ python3 --version
 ## 3.1 一眼看懂
 
 ```
-cinder-server/
+prism/
 │
 ├── 啟動類 ─────────────────────────────────
 │   ├── triad-up              ← 啟動 / 重啟 / 看狀態（最常用）
@@ -240,14 +240,14 @@ blocks/
 
 **C · 系統服務（開機自動啟動，Linux）**
 ```ini
-# /etc/systemd/system/cinder.service
+# /etc/systemd/system/prism.service
 [Unit]
-Description=Cinder proxy
+Description=Prism proxy
 After=network.target
 
 [Service]
-WorkingDirectory=/opt/cinder-server
-ExecStart=/opt/cinder-server/run-proxy.sh
+WorkingDirectory=/opt/prism
+ExecStart=/opt/prism/run-proxy.sh
 Restart=always
 RestartSec=3
 User=你的使用者名稱
@@ -258,8 +258,8 @@ WantedBy=multi-user.target
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now cinder
-sudo systemctl status cinder
+sudo systemctl enable --now prism
+sudo systemctl status prism
 ```
 
 ## 4.2 成功的樣子
@@ -464,9 +464,9 @@ ARMOR_BIND=0.0.0.0 ./triad-up
 
 ```sh
 cloudflared tunnel login
-cloudflared tunnel create cinder
-cloudflared tunnel route dns cinder api.你的網域.com
-cloudflared tunnel run --url http://127.0.0.1:8412 cinder
+cloudflared tunnel create prism
+cloudflared tunnel route dns prism api.你的網域.com
+cloudflared tunnel run --url http://127.0.0.1:8412 prism
 ```
 
 之後永遠是 `https://api.你的網域.com`。
@@ -702,5 +702,5 @@ API Key   triad-...   （控制台「金鑰」頁）
 
 ---
 
-**Cinder Server v2 · 2026-11-06**
+**Prism v2 · 2026-11-06**
 Made by yuangeluyou.com :)

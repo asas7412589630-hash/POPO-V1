@@ -7,7 +7,7 @@
 ## 方法一：用 GitHub 網頁（最簡單，不上 CLI）
 
 1. https://github.com/new
-2. Repository name：`cinder-server`
+2. Repository name：`prism`
 3. **Private** 或 Public（見下方「該不該公開」）
 4. **不要**勾 Add README / .gitignore / license（已經有了）
 5. Create repository
@@ -19,17 +19,17 @@
 ## 方法二：用 git 指令（推薦）
 
 ```sh
-cd cinder-server-repo
+cd prism-repo
 
 # 換成你的帳號
-git remote add origin https://github.com/<你的帳號>/cinder-server.git
+git remote add origin https://github.com/<你的帳號>/prism.git
 git push -u origin main
 ```
 
 如果用 SSH：
 
 ```sh
-git remote add origin git@github.com:<你的帳號>/cinder-server.git
+git remote add origin git@github.com:<你的帳號>/prism.git
 git push -u origin main
 ```
 
@@ -38,8 +38,8 @@ git push -u origin main
 ## 方法三：gh CLI
 
 ```sh
-cd cinder-server-repo
-gh repo create cinder-server --private --source=. --push
+cd prism-repo
+gh repo create prism --private --source=. --push
 ```
 
 `--private` 改成 `--public` 就是公開。

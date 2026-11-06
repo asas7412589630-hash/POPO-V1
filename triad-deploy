@@ -41,7 +41,7 @@ done
 if [ "$EMIT_UNIT" = "1" ]; then
   cat <<EOF
 [Unit]
-Description=Cinder proxy ($MODE)
+Description=Prism proxy ($MODE)
 After=network.target
 
 [Service]

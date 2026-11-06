@@ -1,6 +1,6 @@
 [Unit]
-Description=Cinder proxy (local armour proxy)
-Documentation=https://github.com/yuangeluyou/cinder-server
+Description=Prism proxy (local armour proxy)
+Documentation=https://github.com/yuangeluyou/prism
 After=network-online.target
 Wants=network-online.target
 
@@ -9,7 +9,7 @@ Type=simple
 
 # CHANGE THESE TWO before enabling:
 User=ubuntu
-WorkingDirectory=/home/ubuntu/cinder-server
+WorkingDirectory=/home/ubuntu/prism
 
 Environment=TRIAD_PORT=8412
 Environment=ARMOR_BIND=127.0.0.1
@@ -22,7 +22,7 @@ Environment=ARMOR_EPHEMERAL=1
 # the model. Uncomment and set your own.
 #Environment=ARMOR_UPSTREAM_UA=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36
 
-ExecStart=/home/ubuntu/cinder-server/run-proxy.sh
+ExecStart=/home/ubuntu/prism/run-proxy.sh
 
 Restart=always
 RestartSec=3
@@ -38,12 +38,12 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/cinder-server/proxy /home/ubuntu/cinder-server/logs /home/ubuntu/cinder-server/state
+ReadWritePaths=/home/ubuntu/prism/proxy /home/ubuntu/prism/logs /home/ubuntu/prism/state
 
 # journald captures stdout/stderr; in ephemeral mode that is the ONLY record.
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cinder-proxy
+SyslogIdentifier=prism
 
 [Install]
 WantedBy=multi-user.target

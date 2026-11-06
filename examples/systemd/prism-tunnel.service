@@ -1,7 +1,7 @@
 [Unit]
-Description=Cinder tunnel (public URL via cloudflared)
-Documentation=https://github.com/yuangeluyou/cinder-server
-After=network-online.target cinder-proxy.service
+Description=Prism tunnel (public URL via cloudflared)
+Documentation=https://github.com/yuangeluyou/prism
+After=network-online.target prism.service
 Wants=network-online.target
 
 [Service]
@@ -9,7 +9,7 @@ Type=simple
 
 # CHANGE THESE before enabling:
 User=ubuntu
-WorkingDirectory=/home/ubuntu/cinder-server
+WorkingDirectory=/home/ubuntu/prism
 
 Environment=TRIAD_PORT=8412
 
@@ -17,7 +17,7 @@ Environment=TRIAD_PORT=8412
 # /healthz) before writing tunnel_url.txt. A quick tunnel changes its URL each
 # restart; serving the cached one is what makes a client report "service
 # unavailable" against a healthy proxy.
-ExecStart=/home/ubuntu/cinder-server/triad-tunnel
+ExecStart=/home/ubuntu/prism/triad-tunnel
 
 Restart=always
 RestartSec=10
@@ -32,7 +32,7 @@ PrivateTmp=true
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cinder-tunnel
+SyslogIdentifier=prism-tunnel
 
 [Install]
 WantedBy=multi-user.target

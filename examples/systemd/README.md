@@ -6,13 +6,13 @@ and restarting one must not restart the other.
 ## proxy
 
 ```sh
-sudo cp cinder-proxy.service /etc/systemd/system/
+sudo cp prism.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now cinder-proxy
+sudo systemctl enable --now prism
 ```
 
 Edit `User=` and `WorkingDirectory=` first — the defaults are `ubuntu` and
-`/home/ubuntu/cinder-server`.
+`/home/ubuntu/prism`.
 
 **Ephemeral mode is on in the shipped unit.** Nothing is written to disk. If you
 want logs and archives, set `ARMOR_EPHEMERAL=0`.
@@ -23,15 +23,15 @@ Optional. Only needed when clients are not on the same host and you do not want
 to use an SSH tunnel.
 
 ```sh
-sudo cp cinder-tunnel.service /etc/systemd/system/
+sudo cp prism-tunnel.service /etc/systemd/system/
 ```
 
 Requires `cloudflared` on `PATH` and a tunnel already created:
 
 ```sh
 cloudflared tunnel login
-cloudflared tunnel create cinder
-cloudflared tunnel route dns cinder api.example.com
+cloudflared tunnel create prism
+cloudflared tunnel route dns prism api.example.com
 ```
 
 The unit runs `triad-tunnel`, which re-reads the published hostname each start —
@@ -41,9 +41,9 @@ clients see "service unavailable" against a perfectly healthy proxy.
 ## Checking
 
 ```sh
-systemctl status cinder-proxy
-journalctl -u cinder-proxy -f          # live
-journalctl -u cinder-proxy -n 100      # last 100 lines
+systemctl status prism
+journalctl -u prism -f          # live
+journalctl -u prism -n 100      # last 100 lines
 ```
 
 In ephemeral mode the proxy's output goes to journald only — there is no
