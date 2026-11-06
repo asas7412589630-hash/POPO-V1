@@ -22,7 +22,16 @@ import sys
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 import bench
-import retry_test
+
+# `retry_test` is a probing helper from the research phase and is NOT part of the
+# shipped tree. Importing it at module level made this file unimportable — and
+# because structural.py imports rewriter.py inside a try/except, the failure was
+# silent: reframe simply never ran. Guard it instead, and fail at the call site
+# where a message can be printed.
+try:
+    import retry_test
+except Exception:                       # pragma: no cover
+    retry_test = None
 
 OUT = os.path.join(BASE, "reframe_result.json")
 
@@ -67,6 +76,10 @@ def main():
         row = {}
         for name, tmpl in VARIANTS.items():
             p = tmpl.format(OFFSET=offset)
+            if retry_test is None:
+                raise RuntimeError(
+                    "reframe needs the retry_test helper, which is not shipped; "
+                    "drop your own probing script in as retry_test.py to use it")
             v, trace, r = retry_test.run(m, p, retry_test.ARMOR, None, 0, 20000)
             row[name] = {"v": v, "d": bench.density(r["text"]), "n": len(r["text"]),
                          "head": bench.norm(r["text"])[:150].replace("\n", " ")}
