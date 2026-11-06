@@ -26,7 +26,7 @@ try:
     # Read the first REAL token, not the whole file: keyring writes comment
     # lines with an em dash, and putting that in a header raises a latin-1
     # UnicodeEncodeError before the request is sent (measured 2026-11-01).
-    for _ln in list(open(os.path.join(HERE, "proxy", "client_keys.txt"))):
+    for _ln in list(open(os.path.join(HERE, "proxy", "client_keys.txt"), encoding="utf-8")):
         _ln = _ln.strip()
         if _ln and not _ln.startswith("#"):
             KEY = _ln

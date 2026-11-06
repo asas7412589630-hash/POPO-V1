@@ -89,7 +89,7 @@ def main():
         best = [k for k, v in row.items() if v["v"] == "OK"]
         out[m] = {"variants": row, "best": best}
         print("    -> %s %s" % (m, best or "NONE"), flush=True)
-        json.dump(out, open(OUT, "w"), indent=2, ensure_ascii=False)
+        json.dump(out, open(OUT, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
 
 
 if __name__ == "__main__":

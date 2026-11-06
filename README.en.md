@@ -84,9 +84,23 @@ the prompt. Change devices by pointing at the same URL.**
 
 ## Quick start
 
+**Universal CLI (Recommended, cross-platform Windows / macOS / Linux):**
 ```sh
-unzip prism-v1.zip -d prism
-cd prism
+python triad.py             # Start (runs in background, default port 8412)
+python triad.py --status    # Check status
+python triad.py --restart   # Restart
+python triad.py --stop      # Stop proxy
+```
+
+*Windows PowerShell:*
+```powershell
+.\triad-up.ps1              # Start
+.\triad-up.ps1 -Status      # Status
+.\triad-up.ps1 -Restart     # Restart
+```
+
+*Linux / macOS / Termux Shell scripts:*
+```sh
 chmod +x triad-up triad-deploy triad-tunnel run-proxy.sh run-tunnel.sh
 ./triad-up
 ```
@@ -611,6 +625,7 @@ with the intended use, scale and form. Replies as soon as possible.
 
 | File | Contents |
 |---|---|
+| [AUTHORS.md](AUTHORS.md) | Project maintainers and co-creators |
 | [LICENSE](LICENSE) | CC BY-NC 4.0 legal text, byte-for-byte identical to SPDX |
 | [LICENSE.en.md](LICENSE.en.md) | plain-language English summary (explanatory only; the legal text governs) |
 | [LICENSE.zh-Hant.md](LICENSE.zh-Hant.md) | plain-language Traditional Chinese summary |

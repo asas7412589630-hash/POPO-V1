@@ -90,14 +90,14 @@ def main():
         "alias": os.path.join(tmp, "armor_alias.json"),
         "routes": os.path.join(tmp, "model_routes.json"),
     }
-    with open(files["src"], "w") as f:
+    with open(files["src"], "w", encoding="utf-8") as f:
         json.dump({"sources": [{"id": "mock", "name": "Mock",
                                 "base_url": "http://127.0.0.1:%d/v1" % SRC_PORT}]}, f)
-    with open(files["sec"], "w") as f:
+    with open(files["sec"], "w", encoding="utf-8") as f:
         json.dump({"mock": "test-token"}, f)
-    with open(files["alias"], "w") as f:
+    with open(files["alias"], "w", encoding="utf-8") as f:
         json.dump({"mock/deepseek-v9": ["deepseek-v9"], "mock/gpt-7": ["gpt-7"]}, f)
-    with open(files["routes"], "w") as f:
+    with open(files["routes"], "w", encoding="utf-8") as f:
         json.dump({"mock/deepseek-v9": {"source_id": "mock", "model_id": "deepseek-v9",
                                     "base_url": "http://127.0.0.1:%d/v1" % SRC_PORT,
                                     "profile": ""},
@@ -126,7 +126,7 @@ def main():
         "ARMOR_ROUTES_FILE": files["routes"],
         "ARMOR_LEVEL": "native",
     })
-    log = open(os.path.join(tmp, "proxy.log"), "w+")
+    log = open(os.path.join(tmp, "proxy.log"), "w+", encoding="utf-8", errors="replace")
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "armor_proxy.py")],
                             env=env, cwd=HERE, stdout=log, stderr=subprocess.STDOUT)
     fails = []

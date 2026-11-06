@@ -143,9 +143,9 @@ def main():
         "ARMOR_CAPTURE_RESP": "0",
         "ARMOR_MEDIA_DIR": os.path.join(tmp, "media"),
     })
-    open(env["ARMOR_CLIENT_KEYS"], "w").write("")
+    open(env["ARMOR_CLIENT_KEYS"], "w", encoding="utf-8").write("")
     logpath = os.path.join(tmp, "proxy.log")
-    log = open(logpath, "w+")
+    log = open(logpath, "w+", encoding="utf-8", errors="replace")
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "armor_proxy.py")],
                             env=env, cwd=HERE, stdout=log, stderr=subprocess.STDOUT)
     try:

@@ -189,7 +189,7 @@ check("掛到不存在的帳戶回 False", A.attach_token("u_nope", nk["id"]), F
 check("掛空 id 回 False", A.attach_token(owner_uid, ""), False)
 
 print("12. 損壞的 store 不能鎖死也不能放行")
-with open(os.environ["ARMOR_ACCOUNTS_JSON"], "w") as f:
+with open(os.environ["ARMOR_ACCOUNTS_JSON"], "w", encoding="utf-8") as f:
     f.write("{ this is not json")
 A._cache["stamp"] = None
 A._cache["data"] = None

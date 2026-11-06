@@ -10835,6 +10835,8 @@ def main() -> None:
     try:
         signal.signal(signal.SIGTERM, _graceful)
         signal.signal(signal.SIGINT, _graceful)
+        if hasattr(signal, "SIGBREAK"):
+            signal.signal(signal.SIGBREAK, _graceful)
     except Exception as exc:
         log(f"[warn] could not install signal handlers: {exc}")
 

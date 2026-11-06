@@ -138,8 +138,9 @@ def main():
         # 502ing because the saved panel had require_client_key=true).
         "ARMOR_PANEL_FILE": os.path.join(trace_dir, "panel_settings.json"),
         "ARMOR_KEY_POOL": os.path.join(HERE, "proxy", "upstream_keys.txt"),
+        "ARMOR_CAPTURE_KEY_FILE": "0",
     })
-    log = open(os.path.join(trace_dir, "proxy.log"), "w+")
+    log = open(os.path.join(trace_dir, "proxy.log"), "w+", encoding="utf-8")
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "armor_proxy.py")],
                             env=env, cwd=HERE, stdout=log, stderr=subprocess.STDOUT)
     fails = []
@@ -220,7 +221,7 @@ def main():
         check("trace files", len(day) >= 1, True)
         recs = []
         for f in day:
-            with open(os.path.join(trace_dir, f)) as fh:
+            with open(os.path.join(trace_dir, f), "r", encoding="utf-8") as fh:
                 recs += [json.loads(l) for l in fh if l.strip()]
         check("three turns recorded", len(recs), 3)
         first = recs[0]

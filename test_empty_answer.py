@@ -148,7 +148,7 @@ def main():
         "ARMOR_CAPTURE_RESP": "0",
         "ARMOR_LEVEL": "lean",
     })
-    logf = open(os.path.join(tmp, "proxy.log"), "w+")
+    logf = open(os.path.join(tmp, "proxy.log"), "w+", encoding="utf-8", errors="replace")
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "armor_proxy.py")],
                             env=env, cwd=HERE, stdout=logf, stderr=subprocess.STDOUT)
     fails = []

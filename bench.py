@@ -130,7 +130,7 @@ def _post(model, msgs, timeout):
         data=data,
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + os.environ.get("PROBE_KEY",
-                     open(os.path.join(BASE, "..", "proxy", "upstream_key")).read().strip().split("\n")[0].strip())},
+                     open(os.path.join(BASE, "..", "proxy", "upstream_key"), encoding="utf-8").read().strip().split("\n")[0].strip())},
     )
     t0 = time.time()
     try:
@@ -187,7 +187,7 @@ def verdict(r, minimum=0.04):
 def main():
     models = sys.argv[1:]
     if not models:
-        models = list(json.load(open(os.path.join(BASE, "armor_family.json"))))
+        models = list(json.load(open(os.path.join(BASE, "armor_family.json"), encoding="utf-8")))
         models = [m for m in models if not m.startswith(("logfare/", "noctis"))]
     from concurrent.futures import ThreadPoolExecutor
     workers = int(os.environ.get("BENCH_WORKERS", "2"))
@@ -215,7 +215,7 @@ def main():
     ok = sum(1 for r in rows if r["licence"] in ("OK", "HOLLOW"))
     print("\narmor-passed %d/%d" % (ok, len(rows)))
     out = os.path.join(BASE, "bench_result.json")
-    json.dump(rows, open(out, "w"), indent=2)
+    json.dump(rows, open(out, "w", encoding="utf-8"), indent=2)
     print("-> %s" % out)
 
 
@@ -234,7 +234,7 @@ def call_msgs(model, msgs, timeout=200):
         data=body,
         headers={"Content-Type": "application/json",
                  "Authorization": "Bearer " + os.environ.get("PROBE_KEY",
-                     open(os.path.join(BASE, "..", "proxy", "upstream_key")).read().strip().split("\n")[0].strip())},
+                     open(os.path.join(BASE, "..", "proxy", "upstream_key"), encoding="utf-8").read().strip().split("\n")[0].strip())},
     )
     t0 = time.time()
     try:

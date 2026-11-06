@@ -89,7 +89,7 @@ def build_index():
         blocks = parse_file(os.path.join(OS_DIR, fn))
         if blocks:
             idx[fn] = [{"heading": h, "payload": p} for h, p in blocks]
-    json.dump(idx, open(INDEX_FILE, "w"), indent=1, ensure_ascii=False)
+    json.dump(idx, open(INDEX_FILE, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
     return idx
 
 
@@ -180,7 +180,7 @@ def main():
                       "hit_idx": hit["idx"] if hit else -1}
             print("    -> %s %s" % (m, ("HIT " + hit["heading"]) if hit else "miss"),
                   flush=True)
-            json.dump(out, open(RESULT_FILE, "w"), indent=2, ensure_ascii=False)
+            json.dump(out, open(RESULT_FILE, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
         return
 
     print(__doc__)

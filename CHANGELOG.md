@@ -5,6 +5,29 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.1.0] — 2026-11-07
+
+### Added
+
+- **Cross-platform CLI manager (`triad.py`)**: Native support for starting, restarting,
+  stopping, and health checking the proxy across Windows, macOS, and Linux without bash.
+- **PowerShell launcher (`triad-up.ps1`)**: Native launcher for Windows environments.
+- **`AUTHORS.md`**: Formal co-creator and maintainer documentation (Minglink and asas7412589630-hash).
+
+### Fixed
+
+- **Global UTF-8 encoding**: Explicitly enforce `encoding="utf-8"` on all text `open()`
+  calls across test suites and core tools, fixing `UnicodeDecodeError` on GBK/CP936 Windows.
+- **Windows permission compatibility**: Fixed POSIX `0o600` permission assertion in
+  `test_model_sources.py` on Windows NTFS.
+- **Graceful shutdown on Windows**: Added `SIGBREAK` signal handler to `armor_proxy.py` and
+  `CTRL_BREAK_EVENT` handling in `test_shutdown.py`, resolving abrupt process termination.
+- **Test isolation**: Prevented test suites from writing transient credentials to the
+  repository tree during execution.
+- **Test matrix**: 25/25 offline test suites now pass cleanly on both Windows and Linux.
+
+---
+
 ## [2.0.0] — 2026-11-06
 
 First public release. The number is 2 rather than 1 because an earlier internal

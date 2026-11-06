@@ -14,8 +14,8 @@ reach someone's proxy or read their prompts.
 Include: the version (or commit), the platform, and the smallest reproduction you
 can manage. A `curl` line is ideal.
 
-Expect an acknowledgement within a few days. This is a single-maintainer project,
-so a fix may take longer than that — but the report will not be ignored.
+Expect an acknowledgement within a few days. This is a multi-maintainer project (see [AUTHORS.md](AUTHORS.md)),
+so reports will be acknowledged and reviewed promptly.
 
 ---
 

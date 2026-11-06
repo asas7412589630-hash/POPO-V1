@@ -11,7 +11,8 @@ class SourcesTest(unittest.TestCase):
  def test_secret_hidden_and_0600(self):
   row=ms.save_source({'id':'s','name':'Source','base_url':'https://x.example/v1'},'topsecret')
   self.assertTrue(row['configured']);self.assertNotIn('topsecret',json.dumps(row))
-  self.assertEqual(os.stat(ms.SECRETS).st_mode & 0o777,0o600)
+  if os.name != 'nt':
+   self.assertEqual(os.stat(ms.SECRETS).st_mode & 0o777,0o600)
  def test_publish_is_namespaced_and_routes(self):
   ms.save_source({'id':'s','name':'Source','base_url':'https://x.example/v1'},'secret')
   with patch.object(ms,'discover',return_value=['m1','m2']):

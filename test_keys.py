@@ -23,7 +23,7 @@ sys.path.insert(0, HERE)
 tmp = tempfile.mkdtemp(prefix="keys_test_")
 os.environ["ARMOR_KEYS_JSON"] = os.path.join(tmp, "keys.json")
 os.environ["ARMOR_CLIENT_KEYS"] = os.path.join(tmp, "client_keys.txt")
-open(os.environ["ARMOR_CLIENT_KEYS"], "w").write("triad-legacy-token-abc\n")
+open(os.environ["ARMOR_CLIENT_KEYS"], "w", encoding="utf-8").write("triad-legacy-token-abc\n")
 
 import keyring as K
 

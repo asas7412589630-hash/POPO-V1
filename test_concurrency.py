@@ -44,7 +44,7 @@ KEY = ""
 try:
     # First real token only: keyring writes comment lines containing an em dash,
     # and a non-latin-1 header value fails before the request is sent.
-    for _ln in open(os.path.join(HERE, "proxy", "client_keys.txt")):
+    for _ln in open(os.path.join(HERE, "proxy", "client_keys.txt"), encoding="utf-8"):
         _ln = _ln.strip()
         if _ln and not _ln.startswith("#"):
             KEY = _ln
@@ -203,7 +203,7 @@ def main():
             "ARMOR_STATE": "0", "ARMOR_ARCHIVE": "0",
             "ARMOR_CAPTURE_RESP": "0",
         })
-        log = open(os.path.join(tmp, "proxy.log"), "w+")
+        log = open(os.path.join(tmp, "proxy.log"), "w+", encoding="utf-8", errors="replace")
         proc = subprocess.Popen([sys.executable, os.path.join(HERE, "armor_proxy.py")],
                                 env=env, cwd=HERE, stdout=log, stderr=subprocess.STDOUT)
         base = "http://127.0.0.1:%d/v1" % PX_PORT

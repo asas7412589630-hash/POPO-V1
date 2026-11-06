@@ -104,10 +104,13 @@ def main():
         "ARMOR_STATE": "0", "ARMOR_ARCHIVE": "0",
         "ARMOR_SHUTDOWN_GRACE": "4",
         "ARMOR_SNIFF_DEADLINE": "30",
+        "PYTHONIOENCODING": "utf-8",
     })
-    log = open(os.path.join(tmp, "proxy.log"), "w+")
+    log = open(os.path.join(tmp, "proxy.log"), "w+", encoding="utf-8", errors="replace")
+    cflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
     proc = subprocess.Popen([sys.executable, os.path.join(HERE, "armor_proxy.py")],
-                            env=env, cwd=HERE, stdout=log, stderr=subprocess.STDOUT)
+                            env=env, cwd=HERE, stdout=log, stderr=subprocess.STDOUT,
+                            creationflags=cflags)
     ok = fail = 0
 
     def check(name, cond, extra=""):
@@ -147,7 +150,10 @@ def main():
         t.start()
         time.sleep(2.0)          # 讓串流確認開始
         started = time.time()
-        proc.send_signal(signal.SIGTERM)
+        if os.name == "nt":
+            proc.send_signal(signal.CTRL_BREAK_EVENT)
+        else:
+            proc.send_signal(signal.SIGTERM)
 
         # --- 1. 不再接受新連線 -------------------------------------------
         time.sleep(1.0)

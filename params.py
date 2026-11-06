@@ -136,7 +136,7 @@ def _key():
     for p in (os.path.join(BASE, "..", "proxy", "upstream_key"),
               os.path.join(BASE, "..", "proxy", "upstream_keys.txt")):
         try:
-            line = [l.strip() for l in open(p) if l.strip() and not l.startswith("#")][0]
+            line = [l.strip() for l in open(p, "r", encoding="utf-8") if l.strip() and not l.startswith("#")][0]
             if line:
                 return line
         except Exception:

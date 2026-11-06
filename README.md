@@ -76,9 +76,23 @@ OpenAI 相容 · 多模型人設注入 · 拒答自動重試 · 可零落地運�
 
 ## 快速開始
 
+**通用啟動（推薦，跨平台 Windows / macOS / Linux）：**
 ```sh
-unzip prism-v1.zip -d prism
-cd prism
+python triad.py             # 啟動（背景運行，默認端口 8412）
+python triad.py --status    # 檢查狀態
+python triad.py --restart   # 重新啟動
+python triad.py --stop      # 停止代理
+```
+
+*Windows PowerShell 用戶亦可使用：*
+```powershell
+.\triad-up.ps1              # 啟動
+.\triad-up.ps1 -Status      # 狀態
+.\triad-up.ps1 -Restart     # 重啟
+```
+
+*Linux / macOS / Termux 原生 Shell 腳本：*
+```sh
 chmod +x triad-up triad-deploy triad-tunnel run-proxy.sh run-tunnel.sh
 ./triad-up
 ```
@@ -567,6 +581,7 @@ curl -H "Authorization: Bearer $API_KEY" \
 
 | 檔案 | 內容 |
 |---|---|
+| [AUTHORS.md](AUTHORS.md) | 專案維護者與共創者名單 |
 | [LICENSE](LICENSE) | CC BY-NC 4.0 英文法律原文（與 SPDX 官方逐位元組一致） |
 | [LICENSE.zh-Hant.md](LICENSE.zh-Hant.md) | 繁體中文白話摘要（僅供理解，效力以英文為準） |
 | [LICENSE.en.md](LICENSE.en.md) | 英文白話摘要 |

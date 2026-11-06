@@ -162,7 +162,7 @@ def main():
     for m in models:
         res = tune(m, prompt)
         out[m] = res
-        json.dump(out, open(OUT, "w"), indent=2, ensure_ascii=False)
+        json.dump(out, open(OUT, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
         print("    -> %s best=%s" % (m, res["best"] or "NONE"), flush=True)
     print("\n-> %s" % OUT)
 
