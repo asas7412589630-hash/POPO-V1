@@ -1,0 +1,68 @@
+# Keys and secrets — never commit REAL values.
+#
+# proxy/keys.json, client_keys.txt, upstream_keys.txt and source_secrets.json are
+# TRACKED on purpose: the install needs them to exist, and they ship empty
+# (comments-only / {"keys":[]} / {}). CI fails the build if a real value appears
+# in any of them, so the guard is automated rather than a rule someone remembers.
+proxy/upstream_key
+proxy/setup_token.txt
+proxy/accounts.json
+proxy/source_secrets.local.json
+
+# Runtime state — recreated on start
+logs/
+proxy/logs/
+state/
+runtime/
+artifacts/
+media/
+proxy/last_*.json
+proxy/responses.jsonl
+proxy/full_body.json
+proxy/state/
+last_usage.json
+fp_debug.jsonl
+incoming.json
+panel_state.json
+*.pid
+tunnel_url.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Local overrides and scratch
+.env
+.env.*
+!.env.example
+*.local
+scratch/
+*.log
+*.tmp
+*.bak
+*.bak_*
+.bak_*/
+
+# Test scratch
+triad_src_*/
+triad_conc_*/
+triad_ephem_*/
+.coverage
+htmlcov/
+.pytest_cache/

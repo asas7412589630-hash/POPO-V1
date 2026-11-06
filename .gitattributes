@@ -1,0 +1,37 @@
+# Normalise line endings so a Windows checkout does not turn shell scripts
+# into CRLF files that sh(1) refuses to run.
+* text=auto eol=lf
+
+# Shell scripts must stay LF, always.
+*.sh    text eol=lf
+triad-up       text eol=lf
+triad-deploy   text eol=lf
+triad-tunnel   text eol=lf
+run-proxy.sh   text eol=lf
+run-tunnel.sh  text eol=lf
+run-tests.sh   text eol=lf
+acct           text eol=lf
+
+# Python and docs: LF, diff-able.
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+*.html  text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Binaries
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+
+# Keep the armor blocks readable in diffs — they are prose, and a word-level
+# diff is how you review a prompt change.
+blocks/*.txt  text eol=lf diff

@@ -1,0 +1,104 @@
+#!/bin/sh
+# triad-deploy — set up this copy for a hosted, ephemeral instance.
+#
+# What this does, and why each part matters on a shared host:
+#   * --ephemeral      nothing is written to disk (see ARMOR_EPHEMERAL in
+#                      armor_proxy.py). No request log, no trace, no archive,
+#                      no usage ledger, no accounts, no setup-token file.
+#   * --bind loopback  the listener stays on 127.0.0.1 so the host exposes no
+#                      port. Reach it over SSH (-L) or a tunnel with Access
+#                      policy; there is no public surface to scan.
+#   * --user-agent     rewrites bot UAs at the edge. A shared host's egress IP
+#                      is often already on a WAF list, and `python-urllib` gets
+#                      blocked before the request reaches the model.
+#
+# Usage:
+#   ./triad-deploy                    interactive summary + start
+#   ./triad-deploy --print            only print the client config
+#   ./triad-deploy --systemd          also emit a unit file to stdout
+#   ./triad-deploy --port 9000        different port
+#   ./triad-deploy --open             bind 0.0.0.0 (NOT recommended)
+set -e
+DIR=$(cd "$(dirname "$0")" && pwd)
+PORT=${TRIAD_PORT:-8412}
+MODE=ephemeral
+BIND=127.0.0.1
+PRINT_ONLY=0
+EMIT_UNIT=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port) PORT="$2"; shift 2 ;;
+    --print) PRINT_ONLY=1; shift ;;
+    --systemd) EMIT_UNIT=1; shift ;;
+    --open) BIND=0.0.0.0; shift ;;
+    --persist) MODE=persist; shift ;;
+    -h|--help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$EMIT_UNIT" = "1" ]; then
+  cat <<EOF
+[Unit]
+Description=Cinder proxy ($MODE)
+After=network.target
+
+[Service]
+Type=simple
+User=$(id -un)
+WorkingDirectory=$DIR
+Environment=ARMOR_EPHEMERAL=$( [ "$MODE" = "ephemeral" ] && echo 1 || echo 0 )
+Environment=ARMOR_BIND=$BIND
+Environment=TRIAD_PORT=$PORT
+ExecStart=$DIR/run-proxy.sh
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  exit 0
+fi
+
+if [ "$PRINT_ONLY" = "1" ]; then
+  echo "Base URL: http://127.0.0.1:$PORT/v1"
+  echo "API Key : (create one in the console at http://127.0.0.1:$PORT/app/)"
+  exit 0
+fi
+
+echo "== Cinder deploy =="
+echo "  mode    : $MODE$( [ "$MODE" = "ephemeral" ] && echo '  (nothing written to disk)')"
+echo "  bind    : $BIND$( [ "$BIND" = "127.0.0.1" ] && echo '  (no public surface)')"
+echo "  port    : $PORT"
+echo
+
+if [ "$MODE" = "ephemeral" ]; then
+  export ARMOR_EPHEMERAL=1
+fi
+export ARMOR_BIND="$BIND"
+export TRIAD_PORT="$PORT"
+
+# Refuse to start with no upstream key and no client key on a public bind —
+# that combination is an open relay. Ephemeral mode does not weaken auth.
+KEYS=$(grep -vc '^#' "$DIR/proxy/upstream_keys.txt" 2>/dev/null || echo 0)
+if [ "$BIND" != "127.0.0.1" ] && [ "${KEYS:-0}" -eq 0 ]; then
+  echo "refusing: bind is $BIND but proxy/upstream_keys.txt has no key." >&2
+  echo "Write your upstream key first, or use --open with a client key set." >&2
+  exit 1
+fi
+
+"$DIR/triad-up"
+echo
+echo "  console : http://127.0.0.1:$PORT/app/"
+echo "  from another machine (SSH tunnel):"
+echo "            ssh -N -L $PORT:127.0.0.1:$PORT $(id -un)@<this-host>"
+echo
+echo "  client  : Base URL http://127.0.0.1:$PORT/v1"
+echo "            API Key  (create in console → 金鑰)"
+if [ "$MODE" = "ephemeral" ]; then
+  echo
+  echo "  note    : no log, trace, archive, usage or account file is written."
+  echo "            Restarting loses every key you created — copy it out first."
+fi

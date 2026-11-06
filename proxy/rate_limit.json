@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "paths": {
+    "apply_prefixes": [
+      "/v1/",
+      "/chat/",
+      "/completions",
+      "/responses",
+      "/messages"
+    ],
+    "exclude_exact": [
+      "/healthz",
+      "/health",
+      "/"
+    ]
+  },
+  "scopes": {
+    "global": {
+      "per_minute": 30,
+      "per_hour": 600,
+      "per_day": 6000
+    }
+  }
+}

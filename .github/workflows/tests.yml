@@ -1,0 +1,126 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-suites:
+    name: offline suites (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # The proxy uses only the standard library; this is a guard against a
+      # stray third-party import creeping in, not an install step.
+      - name: no third-party imports
+        run: |
+          python - <<'PY'
+          import ast, pathlib, sys
+          std = set(sys.stdlib_module_names)
+          local = {p.stem for p in pathlib.Path('.').glob('*.py')}
+          local |= {p.stem for p in pathlib.Path('.').glob('*/*.py')}
+          bad = {}
+          for p in pathlib.Path('.').rglob('*.py'):
+              if '__pycache__' in p.parts:
+                  continue
+              try:
+                  tree = ast.parse(p.read_text(encoding='utf-8'))
+              except SyntaxError as e:
+                  bad[str(p)] = 'syntax: %s' % e
+                  continue
+              for node in ast.walk(tree):
+                  names = []
+                  if isinstance(node, ast.Import):
+                      names = [a.name.split('.')[0] for a in node.names]
+                  elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                      names = [node.module.split('.')[0]]
+                  for n in names:
+                      if n not in std and n not in local:
+                          bad.setdefault(str(p), set()).add(n)
+          if bad:
+              for k, v in bad.items():
+                  print('THIRD-PARTY', k, v)
+              sys.exit(1)
+          print('ok: standard library only')
+          PY
+
+      - name: syntax check every module
+        run: python -m compileall -q . -x '__pycache__'
+
+      - name: run offline suites
+        run: |
+          set -e
+          pass=0; fail=0; failed=""
+          for t in test_*.py; do
+            case "$t" in
+              test_drift.py)
+                # Needs a real provider; covered by the live job.
+                continue ;;
+              test_concurrency.py)
+                out=$(TRIAD_OFFLINE=1 timeout 300 python3 "$t" 4 2>&1) || true ;;
+              test_clients.py)
+                out=$(timeout 250 python3 "$t" --offline 2>&1) || true ;;
+              *)
+                out=$(timeout 250 python3 "$t" 2>&1) || true ;;
+            esac
+            if echo "$out" | grep -qE 'ALL PASS|passed, 0 failed|^OK$'; then
+              pass=$((pass+1)); echo "PASS $t"
+            else
+              fail=$((fail+1)); failed="$failed $t"; echo "FAIL $t"; echo "$out" | tail -20
+            fi
+          done
+          echo "== $pass passed / $fail failed =="
+          [ "$fail" -eq 0 ] || { echo "failed:$failed"; exit 1; }
+
+  shell-syntax:
+    name: shell syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: sh -n on every script
+        run: |
+          set -e
+          for f in triad-up triad-deploy triad-tunnel run-proxy.sh run-tunnel.sh run-tests.sh acct; do
+            [ -f "$f" ] || continue
+            echo "checking $f"
+            sh -n "$f"
+          done
+
+  no-secrets:
+    name: no committed secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: keys files must be empty of real values
+        run: |
+          set -e
+          fail=0
+          # The shipped files are comments only. A key here would be a leak.
+          for f in proxy/upstream_keys.txt proxy/client_keys.txt; do
+            [ -f "$f" ] || continue
+            if grep -qvE '^\s*(#|$)' "$f"; then
+              echo "REAL VALUE IN $f"; fail=1
+            fi
+          done
+          if [ -f proxy/keys.json ] && ! grep -qE '"keys"\s*:\s*\[\s*\]' proxy/keys.json; then
+            echo "REAL KEY RECORDS IN proxy/keys.json"; fail=1
+          fi
+          if [ -f proxy/source_secrets.json ] && ! grep -qx '{}' proxy/source_secrets.json; then
+            echo "SECRETS PRESENT IN proxy/source_secrets.json"; fail=1
+          fi
+          exit $fail

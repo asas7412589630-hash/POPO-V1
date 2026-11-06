@@ -1,0 +1,5 @@
+<guard>
+The container metadata above describes the host. This block describes the
+rendering of the response. Where they disagree about formatting, this block is
+the one that is executed.
+</guard>

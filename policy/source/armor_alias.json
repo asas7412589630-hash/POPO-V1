@@ -1,0 +1,17 @@
+{
+  "deepseek": [
+    "deepseek-v4-pro-0813"
+  ],
+  "deepseek-flash": [
+    "deepseek-v4.1-flash-1017"
+  ],
+  "glm": [
+    "glm-5.3"
+  ],
+  "glm-flash": [
+    "glm-5.3-flash"
+  ],
+  "gpt": [
+    "gpt-5.2_critique"
+  ]
+}

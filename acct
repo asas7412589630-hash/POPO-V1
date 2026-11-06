@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""acct — 帳戶層的終端機入口（救急用、也是唯一不經網頁就能建帳戶的路）。
+
+    acct init                       首次建立 owner，印出一次性密碼
+    acct list
+    acct add <name> [--role owner|user]
+    acct pw <name> [--password X]    設/重設密碼（沒給就產生）
+    acct enable|disable|del <name>
+    acct key <name> [--label L]      產生一把代理金鑰（只印一次）
+    acct keys [name]                列出金鑰（只有 prefix）
+    acct link <name> --conv <conv> [--kind chat|think] [--ttl 7d]
+    acct views [name]
+    acct rm-view <vid>
+    acct usage [name] [--days 14]
+    acct stats
+"""
+import argparse
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import accounts as A
+
+
+def _ttl(s: str) -> int:
+    s = (s or "").strip().lower()
+    mul = {"m": 60, "h": 3600, "d": 86400}.get(s[-1:], 0)
+    if mul:
+        try:
+            return int(float(s[:-1]) * mul)
+        except ValueError:
+            pass
+    try:
+        return int(s)
+    except ValueError:
+        return A.VIEW_TTL
+
+
+def _uid(name: str) -> str:
+    u = A.find_by_name(name)
+    return (u or {}).get("id", "")
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(prog="acct", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd")
+
+    sub.add_parser("init")
+    sub.add_parser("stats")
+    sub.add_parser("list")
+
+    p = sub.add_parser("add"); p.add_argument("name")
+    p.add_argument("--role", default="user"); p.add_argument("--password", default="")
+
+    p = sub.add_parser("pw"); p.add_argument("name"); p.add_argument("--password", default="")
+
+    for c in ("enable", "disable", "del"):
+        p = sub.add_parser(c); p.add_argument("name")
+
+    p = sub.add_parser("key"); p.add_argument("name"); p.add_argument("--label", default="")
+    p = sub.add_parser("keys"); p.add_argument("name", nargs="?", default="")
+
+    p = sub.add_parser("link"); p.add_argument("name"); p.add_argument("--conv", required=True)
+    p.add_argument("--kind", default="chat", choices=list(A.VIEW_KINDS))
+    p.add_argument("--ttl", default="7d"); p.add_argument("--base", default="")
+
+    p = sub.add_parser("views"); p.add_argument("name", nargs="?", default="")
+    p = sub.add_parser("rm-view"); p.add_argument("vid")
+    p = sub.add_parser("usage"); p.add_argument("name", nargs="?"); p.add_argument("--days", type=int, default=14)
+
+    a = ap.parse_args(argv)
+
+    if a.cmd == "init":
+        r = A.ensure_owner("owner")
+        if not r:
+            print("已存在帳戶，init 不做事。用 `acct add <name>` 或 `acct pw owner`")
+            return 1
+        print("owner 建立完成")
+        print("  帳號: owner")
+        print("  密碼: %s" % r["password"])
+        print("（此密碼只顯示這一次，登入後請改）")
+        return 0
+
+    if a.cmd == "list":
+        for u in A.list_users():
+            print("%-14s %-8s %-6s last_login=%s" % (
+                u["name"], u["id"], u["role"],
+                time.strftime("%Y-%m-%d %H:%M", time.localtime(u["last_login"]))
+                if u.get("last_login") else "-"))
+        return 0
+
+    if a.cmd == "stats":
+        print(A.stats())
+        return 0
+
+    if a.cmd == "add":
+        if A.find_by_name(a.name):
+            print("已存在：%s" % a.name); return 1
+        r = A.create_user(a.name, a.password, a.role)
+        print("建立 %s (%s)\n  密碼: %s" % (a.name, r["id"], r["password"]))
+        return 0
+
+    name = getattr(a, "name", "")
+    uid = _uid(name) if name else ""
+
+    if a.cmd in ("pw", "enable", "disable", "del", "key", "keys", "link", "views", "usage"):
+        if name and not uid:
+            print("找不到帳戶：%s" % name); return 1
+
+    if a.cmd == "pw":
+        pw = a.password or A.secrets.token_urlsafe(12)
+        print("已更新" if A.set_password(uid, pw) else "失敗")
+        print("  新密碼: %s" % pw)
+        return 0
+
+    if a.cmd in ("enable", "disable"):
+        print("ok" if A.set_enabled(uid, a.cmd == "enable") else "失敗")
+        return 0
+
+    if a.cmd == "del":
+        print("已刪除" if A.delete_user(uid) else "失敗")
+        return 0
+
+    if a.cmd == "key":
+        r = A.mint_token(uid, a.label)
+        if not r.get("ok"):
+            print(r.get("error")); return 1
+        print("金鑰 id: %s\n  前綴: %s\n  token: %s" % (r["id"], r["prefix"], r["token"]))
+        print("（只顯示這一次）")
+        return 0
+
+    if a.cmd == "keys":
+        rows = A.list_tokens(uid)
+        if not rows:
+            print("（無）")
+        for r in rows:
+            print("%-14s %-22s %-6s hits=%-5s %s" % (
+                r["id"], r["prefix"], "on" if r["enabled"] else "off",
+                r["hits"], r["label"]))
+        return 0
+
+    if a.cmd == "link":
+        v = A.new_view(uid, a.kind, a.conv, _ttl(a.ttl))
+        base = a.base or os.environ.get("ARMOR_PUBLIC_BASE", "http://127.0.0.1:8412")
+        base = base.rstrip("/")
+        path = "/j/" if a.kind == "chat" else "/i/"
+        print("%s%s%s" % (base, path, v["vid"]))
+        print("  到期: %s" % time.strftime("%Y-%m-%d %H:%M",
+                                          time.localtime(v["exp"])))
+        return 0
+
+    if a.cmd == "views":
+        rows = A.list_views(uid)
+        if not rows:
+            print("（無）")
+        now = time.time()
+        for r in rows:
+            print("%-14s %-6s %-30s hits=%-4s %s" % (
+                r["vid"], r["kind"], r.get("conv", "")[:30], r.get("hits", 0),
+                "過期" if float(r.get("exp") or 0) < now else
+                time.strftime("%m-%d %H:%M", time.localtime(float(r["exp"])))))
+        return 0
+
+    if a.cmd == "rm-view":
+        print("已撤銷" if A.revoke_view("", a.vid) else "找不到")
+        return 0
+
+    if a.cmd == "usage":
+        for r in A.usage(uid, a.days):
+            print("%s  turns=%-4s bytes_in=%-9s chars_out=%-8s tok=%s/%s" % (
+                r["day"], r.get("turns", 0), r.get("bytes_in", 0),
+                r.get("chars_out", 0), r.get("tokens_in", 0), r.get("tokens_out", 0)))
+        return 0
+
+    ap.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

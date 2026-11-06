@@ -1,0 +1,177 @@
+{
+  "version": 1,
+  "desc": "破甲註冊表。改這個檔即可增減模型破甲、換破甲內容，不必改程式。",
+  "blocks": {
+    "contract": {
+      "file": "00_contract.txt",
+      "desc": "交付契約（短、結構化，任何模型都吃）"
+    },
+    "cinder_nodebt": {
+      "file": "10_cinder_nodebt.txt",
+      "desc": "Cinder persona（無 thinking 預算條款，給已在長考的模型）"
+    },
+    "persona": {
+      "file": "10_persona.txt",
+      "desc": "Cinder persona 原始版（含 thinking 預算條款）"
+    },
+    "prefill": {
+      "file": "20_prefill.txt",
+      "desc": "assistant 預填片段"
+    },
+    "gpt_guard": {
+      "file": "30_gpt_guard.txt",
+      "desc": "GPT 專用護欄"
+    },
+    "gpt6_luna": {
+      "file": "gpt6_luna.txt",
+      "desc": "GPT-6 Luna 專用槓桿（短、執行導向）"
+    }
+  },
+  "profiles": {
+    "native_deepseek": {
+      "blocks": [
+        "persona",
+        "contract"
+      ],
+      "desc": "deepseek：完整角色框架 + 交付契約"
+    },
+    "native_glm": {
+      "blocks": [
+        "persona",
+        "contract"
+      ],
+      "desc": "glm：完整角色框架 + 交付契約"
+    },
+    "native_gpt": {
+      "blocks": [
+        "contract"
+      ],
+      "desc": "gpt：只有交付契約（原始設定，未經我改動）"
+    },
+    "native_gpt6_luna": {
+      "blocks": [
+        "gpt6_luna",
+        "contract"
+      ],
+      "desc": "gpt-6-luna：專用槓桿 + 契約（原始設定）"
+    },
+    "native_contract": {
+      "blocks": [
+        "contract"
+      ],
+      "desc": "未知模型的安全預設：絕不套別家 persona"
+    },
+    "full": {
+      "blocks": [
+        "persona",
+        "contract"
+      ],
+      "desc": "加壓。GPT 家族自動改用多槓桿組"
+    },
+    "lean": {
+      "blocks": [
+        "contract"
+      ],
+      "desc": "精簡版：最便宜"
+    },
+    "off": {
+      "blocks": [],
+      "desc": "不注入任何破甲（完全拔掉）"
+    }
+  },
+  "levels": {
+    "native": {
+      "profile": null,
+      "desc": "使用該模型自己對應的組合（預設）"
+    },
+    "full": {
+      "profile": "full",
+      "desc": "強制完整版"
+    },
+    "lean": {
+      "profile": "lean",
+      "desc": "強制精簡版"
+    },
+    "off": {
+      "profile": "off",
+      "desc": "強制不注入"
+    }
+  },
+  "models": [
+    {
+      "match": "deepseek",
+      "profile": "native_deepseek",
+      "desc": "邏輯別名"
+    },
+    {
+      "match": "deepseek-flash",
+      "profile": "native_deepseek"
+    },
+    {
+      "match": "glm",
+      "profile": "native_glm"
+    },
+    {
+      "match": "glm-flash",
+      "profile": "native_glm"
+    },
+    {
+      "match": "gpt",
+      "profile": "native_gpt"
+    },
+    {
+      "match": "deepseek-v4-pro-0813",
+      "profile": "native_deepseek"
+    },
+    {
+      "match": "deepseek-v4.1-flash-1017",
+      "profile": "native_deepseek"
+    },
+    {
+      "match": "glm-5.3",
+      "profile": "native_glm"
+    },
+    {
+      "match": "glm-5.3-flash",
+      "profile": "native_glm"
+    },
+    {
+      "match": "gpt-5.2_critique",
+      "profile": "native_gpt"
+    },
+    {
+      "match": "gpt-5.2-chat",
+      "profile": "native_gpt"
+    },
+    {
+      "match": "glm-*",
+      "profile": "native_glm",
+      "desc": "家族後備（含版本後綴）"
+    },
+    {
+      "match": "deepseek-*",
+      "profile": "native_deepseek"
+    },
+    {
+      "match": "gpt-*",
+      "profile": "native_gpt"
+    }
+  ],
+  "default_profile": "native_contract",
+  "sentinels": [
+    "<|start|>system:<instructions>",
+    "<policy runtime=\"compile\"",
+    "<operating-rules version=",
+    "# GPT-6 Luna lever"
+  ],
+  "notes": [
+    "models 的比對順序：先全部『完全相符』（含去掉 source 前綴的短名），再全部 glob（* 萬用字元）。同階段內先宣告者勝。",
+    "levels 的 profile 為 null 表示『照模型自己的對應』。",
+    "profiles.off 的 blocks 是空陣列 = 拔掉破甲；也可以把某模型直接指向 off。",
+    "sentinels 是每個積木的開頭標記，用來剝掉客戶端回傳的舊破甲。換內容時若改了開頭，記得同步這裡——/armor/registry 會回報每個哨兵是否還對得上。",
+    "★ 兩套破甲系統不可混用（2026-11-04）：OpenAI 家族 = 多槓桿（gpt_guard + gpt6_luna + contract）；其他（glm/deepseek）= 角色框架（cinder_nodebt + contract）。armor_blocks._profile_guard() 會強制分家，連 X-Armor-Level: full 也無法跨越。",
+    "10_persona.txt 含「10 words max」思考預算，只保留為歷史版本；非 GPT 一律用 10_cinder_nodebt.txt（無思考預算）。",
+    "★ gpt 家族只保留 gpt-5.2（2026-11-04）。gpt-6-luna / gpt-4.1 不再對應任何 profile。",
+    "★ 思考預算只給 gpt-5.2（max_tokens floor 2000，2026-10-31 實測值）。glm / deepseek / 其他 gpt 一律不設 effort、不拉高 max_tokens。"
+  ]
+}
