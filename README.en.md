@@ -14,7 +14,7 @@ OpenAI-compatible · per-family system prompts · automatic refusal retry · can
 
 ![Python](https://img.shields.io/badge/python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)
 ![Dependencies](https://img.shields.io/badge/dependencies-none-22c55e?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-27%20suites-22c55e?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-28%20suites-22c55e?style=flat-square)
 ![License](https://img.shields.io/badge/license-CC%20BY--NC%204.0-c2410c?style=flat-square)
 
 </div>

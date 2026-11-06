@@ -52,7 +52,7 @@ try:
 except OSError:
     pass
 
-OFFLINE = os.environ.get("TRIAD_OFFLINE") == "1"
+OFFLINE = os.environ.get("TRIAD_OFFLINE", "1") != "0" and "--online" not in sys.argv
 UP_PORT = 19901
 PX_PORT = 19902
 
@@ -60,6 +60,14 @@ PX_PORT = 19902
 # That is the cheapest way to detect cross-talk — if request A gets request B's
 # armour length, the reply says so.
 MODE = {"reject_unknown": False}
+
+
+class QuietServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        exc_type = sys.exc_info()[0]
+        if exc_type and issubclass(exc_type, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Echo(BaseHTTPRequestHandler):
@@ -182,7 +190,7 @@ def main():
     tmp = None
 
     if OFFLINE:
-        up = ThreadingHTTPServer(("127.0.0.1", UP_PORT), Echo)
+        up = QuietServer(("127.0.0.1", UP_PORT), Echo)
         threading.Thread(target=up.serve_forever, daemon=True).start()
         tmp = tempfile.mkdtemp(prefix="triad_conc_")
         env = dict(os.environ)

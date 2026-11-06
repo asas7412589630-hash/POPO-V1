@@ -2119,8 +2119,7 @@ def _fp_debug(msgs, fp: str) -> None:
                 break
         rec = {"ts": round(time.time(), 3), "fp": fp, "n": n, "sys_len": sys_len,
                "sys_head": sys_head, "usr_head": usr_head}
-        with open(FP_DEBUG_FILE, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        _append_jsonl(FP_DEBUG_FILE, rec)
     except Exception:
         pass
 
@@ -4455,8 +4454,7 @@ def log_response(kind: str, payload: dict) -> None:
                 rec["artifacts"] = [os.path.basename(p) for p in paths]
         except Exception as _exc:
             log(f"[warn] artifact hook failed: {_exc}")
-        with open(RESP_LOG, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        _append_jsonl(RESP_LOG, rec)
     except Exception as exc:
         log(f"[warn] response log failed: {exc}")
 
@@ -7238,7 +7236,7 @@ class Handler(BaseHTTPRequestHandler):
         300-line function in two is exactly when a free variable silently becomes
         a NameError on the happy path (measured 2026-11-01, immediately).
         """
-        path = self.path
+        path = p_only + (("?" + self.path.split("?", 1)[1]) if "?" in self.path else "")
         armor = load_armor()
         policy_len = str(len(armor or ""))
         body_bytes = raw

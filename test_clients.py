@@ -49,7 +49,7 @@ try:
 except OSError:
     pass
 
-OFFLINE = "--offline" in sys.argv
+OFFLINE = "--offline" in sys.argv or "--online" not in sys.argv
 UP_PORT = 19921
 PX_PORT = 19922
 BASE = ("http://127.0.0.1:%d/v1" % PX_PORT) if OFFLINE else "http://127.0.0.1:8412/v1"
@@ -57,6 +57,14 @@ BASE = ("http://127.0.0.1:%d/v1" % PX_PORT) if OFFLINE else "http://127.0.0.1:84
 # The fake upstream records exactly what reached it, so "did the proxy mangle the
 # request" is answered from the upstream side rather than from the proxy's log.
 SEEN = []
+
+
+class QuietServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        exc_type = sys.exc_info()[0]
+        if exc_type and issubclass(exc_type, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Echo(BaseHTTPRequestHandler):
@@ -167,7 +175,7 @@ def post(path, body, timeout=90, raw_bytes=None, headers=None):
 def main():
     proc = up = None
     if OFFLINE:
-        up = ThreadingHTTPServer(("127.0.0.1", UP_PORT), Echo)
+        up = QuietServer(("127.0.0.1", UP_PORT), Echo)
         threading.Thread(target=up.serve_forever, daemon=True).start()
         tmp = tempfile.mkdtemp(prefix="triad_cli_")
         env = dict(os.environ)
@@ -372,6 +380,12 @@ def main():
             print("  (not translated — a Claude-shaped client gets %s)" % st)
         else:
             print("  answered %s" % st)
+            try:
+                res_obj = json.loads(bd)
+                check("Anthropic response envelope is message", res_obj.get("type") == "message", "%s" % res_obj.get("type"))
+                check("Anthropic response has content blocks", isinstance(res_obj.get("content"), list), "%s" % type(res_obj.get("content")))
+            except Exception as e:
+                check("Anthropic response is valid json", False, str(e))
 
         print("\n16. client retry storm (same request x5 at once)")
         res = []

@@ -42,12 +42,12 @@ OFFLINE_TESTS = [
     "test_empty_answer",
     "test_sources_integration",
     "test_e2e",
+    "test_clients",
+    "test_concurrency",
     "test_theoretical_features_e2e",
 ]
 
 ONLINE_TESTS = [
-    "test_clients",
-    "test_concurrency",
     "test_drift",
 ]
 

@@ -452,6 +452,44 @@ def main():
         check("Old 30-day trace file was removed", os.path.exists(old_file), False)
         check("Today's trace file was preserved", os.path.exists(today_file), True)
 
+        # -------------------------------------------------------------------
+        # [Test 8] Anthropic Messages API Translation (/v1/messages <-> OpenAI)
+        # -------------------------------------------------------------------
+        print("\n--- 8. Anthropic Messages API Translation & Armor Injection ---")
+        anthro_req_body = {
+            "model": "glm-5.3",
+            "max_tokens": 128,
+            "messages": [
+                {"role": "user", "content": "Analyze system binary entry point"}
+            ]
+        }
+        anthro_req = urllib.request.Request(
+            f"http://127.0.0.1:{PROXY_PORT}/v1/messages",
+            data=json.dumps(anthro_req_body).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": "Bearer triad-master-test-key",
+                "X-Forwarded-For": "203.0.113.199",
+            }
+        )
+        with urllib.request.urlopen(anthro_req, timeout=10.0) as resp:
+            st_anthro = resp.status
+            anthro_resp_raw = resp.read().decode("utf-8")
+            anthro_headers = dict(resp.headers)
+
+        check("Anthropic /v1/messages returned HTTP 200", st_anthro, 200)
+        anthro_data = json.loads(anthro_resp_raw)
+        check("Response type is 'message'", anthro_data.get("type"), "message")
+        check("Response role is 'assistant'", anthro_data.get("role"), "assistant")
+        check("Response model matches request", anthro_data.get("model"), "glm-5.3")
+        check("Response content is a list of blocks", isinstance(anthro_data.get("content"), list), True)
+        first_block = anthro_data["content"][0] if anthro_data.get("content") else {}
+        check("First content block is text type", first_block.get("type"), "text")
+        check("First content block has delivered text", len(first_block.get("text", "")) > 10, True)
+        check("Stop reason is valid", anthro_data.get("stop_reason") in ("end_turn", "stop", None), True)
+        check("Usage metrics converted", "input_tokens" in anthro_data.get("usage", {}), True)
+        check("Audit header x-armor-policy-len is present", bool(resp.headers.get("x-armor-policy-len")), True)
+
     finally:
         print("\nCleaning up virtual test harness...")
         try:

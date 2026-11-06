@@ -5,6 +5,29 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.3.0] — 2026-11-07
+
+### Added
+
+- **Full Anthropic Messages API Translation**: Unlocked bidirectional `/v1/messages` <-> OpenAI
+  `/v1/chat/completions` translation in `armor_proxy.py`, enabling native Claude Code and
+  Anthropic SDK compatibility with automated persona injection and refusal recovery.
+- **28-Suite Unified Offline Test Matrix**: Integrated `test_clients` and `test_concurrency` into
+  the offline suite runner with hermetic `QuietServer` harnesses, expanding the test net to 28
+  passing test suites and 39 virtual theoretical verifications.
+
+### Fixed
+
+- **Debug log unbounded growth**: Replaced direct unbounded writes to `FP_DEBUG_FILE` and
+  `RESP_LOG` with size-bounded, rotating log management (`_append_jsonl`) adhering to
+  `ARMOR_EPHEMERAL` zero-leak requirements.
+- **Anthropic upstream routing defect**: Fixed `_forward_locked` upstream route path resolution
+  which previously sent `/v1/messages` to OpenAI upstreams instead of the translated `/v1/chat/completions`.
+- **Windows socket noise in test servers**: Suppressed spurious `ConnectionResetError` (WinError 10054)
+  traces during test harness client disconnects.
+
+---
+
 ## [2.2.0] — 2026-11-07
 
 ### Added
