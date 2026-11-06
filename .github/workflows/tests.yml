@@ -134,6 +134,23 @@ jobs:
           echo "== $pass passed / $fail failed =="
           [ "$fail" -eq 0 ] || { echo "failed:$failed"; exit 1; }
 
+  offline-suites-windows:
+    name: offline suites (windows, py${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: syntax check every module
+        run: python -m compileall -q . -x '__pycache__'
+      - name: run offline test suites
+        run: python run_tests.py
+
   shell-syntax:
     name: shell syntax
     runs-on: ubuntu-latest

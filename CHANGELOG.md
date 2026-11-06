@@ -5,6 +5,22 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.2.0] — 2026-11-07
+
+### Added
+
+- **Web Console i18n Engine (`console/i18n.js`)**: Real-time multi-language support
+  (Traditional Chinese `zh-Hant`, Simplified Chinese `zh-Hans`, English `en`) with
+  automatic browser language detection, `localStorage` persistence, and instant DOM
+  binding via `data-i18n` attributes.
+- **Cross-platform Automated Test Runner (`run_tests.py`)**: Unified Python runner that executes
+  all 26 test suites in isolated subprocesses with dynamic port allocation and comprehensive
+  summary metrics.
+- **Windows CI Pipeline (`offline-suites-windows`)**: Integrated Windows runner matrix on GitHub
+  Actions across Python 3.11 and 3.12, continuously verifying cross-platform compatibility.
+
+---
+
 ## [2.1.0] — 2026-11-07
 
 ### Added
@@ -129,7 +145,6 @@ build existed; nothing from that lineage is supported.
   cost a debugging cycle.
 - Log rotation covers the request log and daily trace turns (`prune_traces`). Debug files still grow
   unbounded in non-ephemeral mode without a prune cron.
-- The console is Traditional Chinese only.
 - WAF-blocked egress IPs are not fixable from inside the proxy.
 
 ---

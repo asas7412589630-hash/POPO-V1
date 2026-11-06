@@ -439,30 +439,35 @@ button.danger:hover:not(:disabled){background:linear-gradient(180deg,#ff8383,#e8
   <h1>⚒ Forge Client</h1>
   <span class="pill" id="connPill"><span class="dot"></span>未設定</span>
   <span class="spacer"></span>
+  <select id="langSelect" class="pill" style="background:#141922;color:var(--dim);border-radius:14px;padding:3px 8px;cursor:pointer">
+    <option value="zh-Hant">繁體</option>
+    <option value="zh-Hans">简体</option>
+    <option value="en">EN</option>
+  </select>
   <button class="ghost" id="btnMenu" style="padding:6px 10px">⚙︎</button>
 </header>
 
 <div class="tabs" id="tabs">
-  <button data-view="chat" class="on">對話</button>
-  <button data-view="log">記錄</button>
-  <button data-view="keys">金鑰</button>
-  <button data-view="setup">設定</button>
-  <button data-view="tune">調校</button>
-  <button data-view="about">說明</button>
+  <button data-view="chat" data-i18n="tab.chat" class="on">對話</button>
+  <button data-view="log" data-i18n="tab.log">記錄</button>
+  <button data-view="keys" data-i18n="tab.keys">金鑰</button>
+  <button data-view="setup" data-i18n="tab.setup">設定</button>
+  <button data-view="tune" data-i18n="tab.tune">調校</button>
+  <button data-view="about" data-i18n="tab.about">說明</button>
 </div>
 
 <main>
   <div id="chat" class="on">
     <div id="armorBar" class="armorbar">
-      <span class="ab-label">破甲</span>
-      <span id="armorBarBody" class="ab-body">載入中…</span>
+      <span class="ab-label" data-i18n="armor.label">破甲</span>
+      <span id="armorBarBody" class="ab-body" data-i18n="armor.loading">載入中…</span>
     </div>
     <div id="msgs"><div class="empty" id="emptyHint"></div></div>
     <div id="composer">
-      <textarea id="input" rows="1" placeholder="輸入訊息…"></textarea>
-      <button class="primary" id="btnSend">送出</button>
-      <button id="btnStop" class="danger" hidden>中止</button>
-      <button id="btnNew" class="ghost" title="清空這一輪對話，保留設定">新對話</button>
+      <textarea id="input" rows="1" placeholder="輸入訊息…" data-i18n-ph="chat.placeholder"></textarea>
+      <button class="primary" id="btnSend" data-i18n="btn.send">送出</button>
+      <button id="btnStop" class="danger" data-i18n="btn.stop" hidden>中止</button>
+      <button id="btnNew" class="ghost" title="清空這一輪對話，保留設定" data-i18n="btn.new">新對話</button>
     </div>
   </div>
 
@@ -793,6 +798,7 @@ button.danger:hover:not(:disabled){background:linear-gradient(180deg,#ff8383,#e8
   </div>
 </main>
 
+<script src="i18n.js?v=20261107-1"></script>
 <script src="app.js?v=20261106-5"></script>
 <script src="setup.js?v=20261106-5"></script>
 <script src="log.js?v=20261106-5"></script>

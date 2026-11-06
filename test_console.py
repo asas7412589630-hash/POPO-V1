@@ -100,7 +100,7 @@ def main():
         # --- shell assets the HTML references must actually exist -------
         st, html = _get("/app/")
         check("/app/ serves html", st, 200)
-        for f in ("app.js", "log.js", "keys.js",
+        for f in ("app.js", "i18n.js", "log.js", "keys.js",
                   "manifest.webmanifest", "icon.svg"):
             names = ['src="%s' % f, 'href="%s' % f]
             check("index references %s" % f, any(n in html for n in names), True)
