@@ -30,8 +30,43 @@ jobs:
       - name: no third-party imports
         run: |
           python - <<'PY'
-          import ast, pathlib, sys
-          std = set(sys.stdlib_module_names)
+          import ast, pathlib, sys, sysconfig
+
+          # sys.stdlib_module_names exists from 3.10. The matrix includes 3.9,
+          # where reading it raised AttributeError and the whole job died in 14
+          # seconds — before a single test ran. Derive the set from the stdlib
+          # directory layout instead, which works on every version.
+          def stdlib_names():
+              if hasattr(sys, "stdlib_module_names"):
+                  return set(sys.stdlib_module_names)
+              names = set(sys.builtin_module_names)
+              root = pathlib.Path(sysconfig.get_paths()["stdlib"])
+              if not root.is_dir():
+                  return names
+              for p in root.iterdir():
+                  if p.is_dir():
+                      if (p / "__init__.py").is_file():
+                          names.add(p.name)
+                  elif p.suffix == ".py":
+                      names.add(p.stem)
+              # C extension modules live in lib-dynload with no .py source, so a
+              # directory scan misses them: `select`, `_ssl`, `zlib`, `math`,
+              # `_socket` and friends. Read their filenames too, otherwise the
+              # check reports a false positive on the very modules the proxy
+              # depends on.
+              dyn = root / "lib-dynload"
+              if dyn.is_dir():
+                  for p in dyn.iterdir():
+                      stem = p.name.split(".")[0]
+                      if stem:
+                          names.add(stem)
+              # Not stdlib for this purpose: third-party and test scaffolding.
+              for skip in ("site-packages", "dist-packages", "lib-dynload",
+                           "test", "tests", "__pycache__"):
+                  names.discard(skip)
+              return names
+
+          std = stdlib_names()
           local = {p.stem for p in pathlib.Path('.').glob('*.py')}
           local |= {p.stem for p in pathlib.Path('.').glob('*/*.py')}
           # Local packages (directories with __init__.py) are not third-party.
