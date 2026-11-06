@@ -497,6 +497,6 @@ curl -H "Authorization: Bearer $API_KEY" \
 
 需要商業授權請另行聯絡。
 
-完整條款見 [LICENSE](LICENSE)。
+完整條款見 [LICENSE](LICENSE)（英文法律原文），白話說明見 [LICENSE.zh-Hant.md](LICENSE.zh-Hant.md)。
 
 使用前請重讀最上面的免責聲明。**這個工具本身是中性的，怎麼用取決於你。**
