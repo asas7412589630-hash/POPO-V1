@@ -14,6 +14,7 @@
 // lastToken: plaintext of a key created in this page session, so the
 // "複製位址 + 金鑰" button can include it. Never persisted anywhere.
 const KEYS = { list: [], access: null, mode: '', lastToken: '' };
+const _tr = (k, fb) => (window.I18N && window.I18N.t ? window.I18N.t(k, fb) : fb);
 
 /* Server root for this page's admin calls.
  *
@@ -44,15 +45,17 @@ function paintMode(){
   const v = $('#modeValue');
   if (v) {
     v.innerHTML = KEYS.mode === 'local'
-      ? '<span style="color:var(--warn)">對內（免金鑰）</span>'
-      : '<span style="color:var(--ok)">對外（需金鑰）</span>';
+      ? `<span style="color:var(--warn)">${_tr('keys.mode_local', '對內（免金鑰）')}</span>`
+      : `<span style="color:var(--ok)">${_tr('keys.mode_remote', '對外（需金鑰）')}</span>`;
   }
   const h = $('#modeHint');
   if (!h) return;
   h.textContent = KEYS.mode === 'local'
-    ? '任何能連到這個 port 的人都能直接使用，不需要金鑰。只適合純本機。'
-    : '任何連到這個網址的請求都必須帶金鑰。開過隧道就該用這個。';
+    ? _tr('keys.hint_local', '任何能連到這個 port 的人都能直接使用，不需要金鑰。只適合純本機。')
+    : _tr('keys.hint_remote', '任何連到這個網址的請求都必須帶金鑰。開過隧道就該用這個。');
 }
+
+window.addEventListener('forge:langchange', () => paintMode());
 
 $('#btnGoWizard').onclick = () => show('setup');
 

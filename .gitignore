@@ -19,6 +19,7 @@ media/
 proxy/last_*.json
 proxy/responses.jsonl
 proxy/full_body.json
+proxy/session_state.json
 proxy/state/
 last_usage.json
 fp_debug.jsonl

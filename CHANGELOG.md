@@ -5,6 +5,39 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.6.0] — 2026-11-07
+
+### Decoupled & Refactored
+
+- **Extracted `armor_refusal.py`**: Decoupled anti-refusal heuristic classification, unicode folding
+  (`_norm_unicode`), opener normalization (`_opening`), passive phrase masking (`_mask_passive`),
+  plain-text pseudo-tool-call detection (`looks_like_pseudo_call`), markdown script detection
+  (`looks_like_script_instead_of_call`), technical content salvaging (`salvage_technical`), essential
+  command extraction (`essential_commands`), repeat turn detection (`is_repeat_turn`), trivial probe
+  filtering (`is_trivial_call`), answer acceptability testing (`_answer_acceptable`), and candidate
+  retry attempt ranking (`_attempt_score`).
+- **Extracted `armor_scrub.py`**: Decoupled conversation history scrub engine (`scrub_refusals`),
+  refusal turn detection (`_is_refusal_turn`), empty nudge turn detection (`_is_empty_nudge`),
+  prose-only turn detection (`_is_prose_only_turn`), planning narration turn detection (`_is_narration_turn`),
+  and orphan user turn collapsing (`_collapse_orphan_users`). Supports dynamic proxy state lookup
+  to maintain full compatibility with runtime configuration toggles.
+- **Architectural Cleanup in `armor_proxy.py`**: Cleaned up duplicated heuristic constants and orphan
+  code blocks, re-exporting all refusal and scrub engine primitives with 100% backward compatibility.
+  Reinforced SSE stream sniffing (`sniff_stream`) and in-band refusal recovery pipelines.
+
+### Optimized & Internationalized
+
+- **Web Console Keys View Localization**: Added dynamic multi-language localization (`zh-Hant`, `zh-Hans`, `en`)
+  for connection mode badges, upstream statuses, and helper notes in `console/keys.js` and `console/i18n.js`,
+  with automatic reactive re-rendering on `forge:langchange`.
+- **Runtime Session State Isolation**: Configured `.gitignore` to prevent runtime `proxy/session_state.json`
+  from leaking into version control.
+- **Expanded Offline Test Matrix to 33 Suites**: Added dedicated unit test suites `test_armor_refusal.py`
+  and `test_armor_scrub.py`. All 33 suites in `run_tests.py` (including comprehensive virtual E2E in
+  `test_theoretical_features_e2e.py`) pass 100% with zero third-party dependencies.
+
+---
+
 ## [2.5.0] — 2026-11-07
 
 ### Decoupled & Refactored

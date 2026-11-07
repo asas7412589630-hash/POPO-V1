@@ -37,6 +37,8 @@ OFFLINE_TESTS = [
     "test_armor_pool",
     "test_armor_headers",
     "test_armor_limiter",
+    "test_armor_refusal",
+    "test_armor_scrub",
     "test_source_routing",
     "test_model_sources",
     "test_shutdown",
