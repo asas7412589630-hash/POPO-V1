@@ -388,14 +388,41 @@ def main():
         check("Latest user turn is unconditionally preserved", any("AES-256" in c for c in sent_contents), True)
 
         # -------------------------------------------------------------------
-        # [Test 6] Multi-Account Lifecycle & Token Revocation
+        # [Test 6] Multi-Account Lifecycle & Web Bootstrap Login
         # -------------------------------------------------------------------
         print("\n--- 6. Accounts & Key Lifecycle Verification ---")
         sys.path.insert(0, HERE)
         import accounts as A
 
-        # Initialize owner account
-        owner = A.ensure_owner("owner_admin")
+        # 6a. Fresh install Web bootstrap login (creating owner through Web console /a/login)
+        boot_req = urllib.request.Request(
+            f"{base_url}/a/login",
+            data=json.dumps({"name": "web_owner", "password": "initial_password_123"}).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Armor-Admin": "1"}
+        )
+        with urllib.request.urlopen(boot_req, timeout=10.0) as resp:
+            st_boot = resp.status
+            body_boot = json.loads(resp.read().decode("utf-8"))
+            set_cookie_header = resp.headers.get("Set-Cookie", "")
+        check("Fresh install Web bootstrap login returns 200", st_boot, 200)
+        check("Bootstrap login sets triad_sid session cookie", "triad_sid=" in set_cookie_header, True)
+        check("Bootstrap user role is owner", body_boot.get("user", {}).get("role"), "owner")
+
+        # Extract session cookie
+        sid_cookie = set_cookie_header.split(";")[0]
+
+        # Verify /a/me with the session cookie
+        me_req = urllib.request.Request(
+            f"{base_url}/a/me",
+            headers={"Cookie": sid_cookie}
+        )
+        with urllib.request.urlopen(me_req, timeout=10.0) as resp:
+            me_data = json.loads(resp.read().decode("utf-8"))
+        check("Authenticated /a/me returns authenticated: True", me_data.get("authenticated"), True)
+        check("Authenticated /a/me confirms is_owner: True", me_data.get("is_owner"), True)
+        check("Authenticated /a/me confirms user name", me_data.get("user", {}).get("name"), "web_owner")
+
+        owner = body_boot.get("user", {})
         check("Owner initialized via account management", bool(owner.get("id")), True)
 
         # Create user alice

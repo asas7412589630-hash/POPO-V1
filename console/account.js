@@ -12,7 +12,14 @@ const ACCT = { me: null, users: [], keys: [], views: [], sessions: [],
                usage: [], convs: [], settings: null, oneShot: null,
                loading: false };
 
-function acctRoot(){ return (cfg.base || '').replace(/\/+$/, '').replace(/\/v1$/, ''); }
+function acctRoot(){
+  try {
+    if (location.protocol === 'http:' || location.protocol === 'https:') {
+      return '';
+    }
+  } catch (e) {}
+  return (cfg.base || '').replace(/\/+$/, '').replace(/\/v1$/, '');
+}
 
 /* 空字串 = 同源相對路徑。控制台就是代理自己服務的（/app/），所以 /a/* 用相對
  * 路徑最正確：不需要使用者先填 Base URL 才能登入，也不會被 cfg.base 指到別的
@@ -45,7 +52,10 @@ function acctLoginScreen(bootstrap){
   acctOverlay(true, `
     <div style="max-width:380px;margin:8vh auto 0">
       <div class="card">
-        <h2 style="margin-bottom:6px">${bootstrap ? '建立擁有者帳戶' : '登入'}</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h2 style="margin:0">${bootstrap ? '建立擁有者帳戶' : '登入'}</h2>
+          <button class="ghost" id="acctClose" style="padding:2px 8px;font-size:16px;cursor:pointer" title="關閉">✕</button>
+        </div>
         <div class="hint" style="margin-bottom:14px;line-height:1.7">
           ${bootstrap
             ? '這個代理還沒有任何帳戶。建立第一個 —— 它就是擁有者，可以再開其他帳戶。'
@@ -53,21 +63,27 @@ function acctLoginScreen(bootstrap){
         </div>
         <div class="field">
           <label>帳號</label>
-          <input id="acctName" autocomplete="username" placeholder="${bootstrap ? 'owner' : '帳號'}">
+          <input id="acctName" autocomplete="username" placeholder="${bootstrap ? 'owner' : '帳號'}" value="${bootstrap ? 'owner' : ''}">
         </div>
         <div class="field">
           <label>密碼</label>
           <input id="acctPass" type="password" autocomplete="${bootstrap ? 'new-password' : 'current-password'}" placeholder="至少 8 個字元">
         </div>
         <button class="primary" id="acctGo" style="width:100%">${bootstrap ? '建立並登入' : '登入'}</button>
+        <button class="ghost" id="acctSkip" style="width:100%;margin-top:8px">${bootstrap ? '稍後設定，直接使用控制台' : '關閉'}</button>
         <div id="acctErr" style="color:var(--bad);font-size:12px;margin-top:10px"></div>
         <div class="hint" style="margin-top:14px;font-size:11.5px">
-          也可以在終端機用 <code>acct init</code> / <code>acct add 名字</code> 建立。
+          也可以在終端機用 <code>acct init</code> / <code>python triad.py acct init</code> 建立。
         </div>
       </div>
     </div>`);
+  const dismiss = () => acctOverlay(false);
+  const closeBtn = $('#acctClose');
+  if (closeBtn) closeBtn.onclick = dismiss;
+  const skipBtn = $('#acctSkip');
+  if (skipBtn) skipBtn.onclick = dismiss;
   const go = async () => {
-    const name = ($('#acctName').value || '').trim();
+    const name = ($('#acctName').value || '').trim() || (bootstrap ? 'owner' : '');
     const pw = $('#acctPass').value || '';
     const err = $('#acctErr');
     err.textContent = '';
@@ -76,7 +92,7 @@ function acctLoginScreen(bootstrap){
     $('#acctGo').disabled = true;
     try {
       const r = await acctFetch('/a/login', {
-        method: 'POST', body: JSON.stringify({ name, password: pw }) });
+        method: 'POST', body: JSON.stringify({ name, password: pw, bootstrap: !!bootstrap }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
       acctOverlay(false);
@@ -548,8 +564,12 @@ async function acctShareConv(conv, kind){
     const b = document.createElement('button');
     b.dataset.view = 'account';
     b.textContent = '帳戶';
+    b.dataset.i18n = 'tab.account';
     tabs.appendChild(b);
     b.onclick = () => show('account');
+    if (window.I18N && typeof window.I18N.applyDOM === 'function') {
+      window.I18N.applyDOM();
+    }
   }
   const main = document.querySelector('main');
   if (main && !$('#view-account')){

@@ -5,6 +5,29 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.4.0] — 2026-11-07
+
+### Fixed
+
+- **Fresh install bootstrap login deadlock**: In `acct_http.py`, `/a/login` now automatically
+  calls `ensure_owner` when `count_users() == 0`, allowing the operator to create the initial
+  owner account directly from the Web Console without being blocked by "帳號或密碼錯誤".
+- **Console login overlay modal trapping**: Added dismissible controls (`✕` and "稍後設定")
+  to `acctLoginScreen` in `console/account.js`, preventing the full-screen modal from holding
+  the operator hostage or blocking access to Setup and Chat views.
+- **Same-origin account API routing**: Fixed `acctRoot()` in `console/account.js` to prioritize
+  same-origin relative paths over `cfg.base`, preventing account requests from being misrouted
+  to external upstream model providers.
+
+### Added
+
+- **Native Windows CLI account management**: Added `acct.bat` and `acct.ps1` wrappers for Windows
+  CMD and PowerShell, and integrated `python triad.py acct <cmd>` subcommand delegation.
+- **End-to-end bootstrap login test**: Added Web bootstrap login and session persistence assertions
+  to `test_theoretical_features_e2e.py` (now 45/45 passing).
+
+---
+
 ## [2.3.0] — 2026-11-07
 
 ### Added

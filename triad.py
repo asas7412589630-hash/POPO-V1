@@ -225,6 +225,9 @@ def main():
         sys.exit(start_cmd(foreground=True))
     elif arg in ("", "up", "start"):
         sys.exit(start_cmd(foreground=False))
+    elif arg == "acct":
+        acct_script = os.path.join(DIR, "acct")
+        sys.exit(subprocess.run([sys.executable, acct_script] + sys.argv[2:]).returncode)
     else:
         print(__doc__.strip(), file=sys.stderr)
         sys.exit(2)

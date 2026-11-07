@@ -232,7 +232,13 @@ def _login(h) -> bool:
     name = str(b.get("name") or b.get("user") or "").strip()
     pw = str(b.get("password") or "")
     ua = h.headers.get("User-Agent") or ""
-    r = A.login(name, pw, ip=_client_ip(h), ua=ua)
+    # 空 store 首次登入自動 bootstrap 建立 owner
+    if A.count_users() == 0:
+        if len(pw) < 8:
+            json_out(h, 400, {"ok": False, "error": "密碼至少 8 個字元"})
+            return True
+        A.ensure_owner(name or "owner", pw)
+    r = A.login(name or "owner", pw, ip=_client_ip(h), ua=ua)
     if not r.get("ok"):
         json_out(h, 429 if r.get("retry_after") else 403, {
             "ok": False, "error": r.get("error") or "登入失敗",
