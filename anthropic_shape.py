@@ -418,3 +418,61 @@ class StreamTranslator:
             "usage": {"output_tokens": self.output_tokens}})
         out += self._ev("message_stop", {"type": "message_stop"})
         return out
+
+
+def looks_anthropic_body(obj) -> bool:
+    """True when a parsed request body is shaped like an Anthropic Messages call.
+
+    The discriminator is what the two schemas disagree about, not what they share:
+    every Anthropic body allows `system` as a top-level string/block list and
+    uses `max_tokens` + `messages`, while an OpenAI body puts the system prompt
+    inside `messages` and has no top-level `system` field at all. Content blocks
+    (`[{"type": "text", ...}]`) are a second strong signal.
+
+    Deliberately conservative: an ambiguous body is treated as OpenAI, because a
+    false positive here rewrites the caller's request while a false negative only
+    produces an upstream 400 that names the missing field.
+    """
+    if not isinstance(obj, dict):
+        return False
+    has_anthropic_markers = ("system" in obj
+                             or "stop_sequences" in obj
+                             or "anthropic_version" in obj)
+    msgs = obj.get("messages")
+    if not isinstance(msgs, list) or not msgs:
+        # No messages at all: a bare {model, max_tokens} is equally valid in
+        # both, so do not claim it.
+        return False
+    # Content blocks with a "type" of text/image/tool_use appear only in the
+    # Anthropic schema; OpenAI uses a string or [{type:"text"}] but the latter
+    # is uncommon and would still translate losslessly.
+    blocks = False
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        c = m.get("content")
+        if isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict) and part.get("type") in (
+                        "tool_use", "tool_result", "image"):
+                    blocks = True
+                    break
+        if blocks:
+            break
+    # An OpenAI-only field is a hard veto.
+    for k in ("response_format", "functions", "function_call", "n", "seed",
+              "logprobs", "stream_options", "presence_penalty",
+              "frequency_penalty", "logit_bias"):
+        if k in obj:
+            return False
+    # `tools` exists in both schemas but is shaped differently: Anthropic uses
+    # {name, description, input_schema}, OpenAI nests the spec under "function".
+    tools = obj.get("tools")
+    if isinstance(tools, list) and tools:
+        first = tools[0] if isinstance(tools[0], dict) else {}
+        if "function" in first:
+            return False
+        if "input_schema" in first:
+            return True
+    return bool(has_anthropic_markers or blocks)
+

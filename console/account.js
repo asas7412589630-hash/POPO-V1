@@ -48,29 +48,31 @@ function acctOverlay(show, html){
   return ov;
 }
 
+const _tr = (k, fb) => (window.I18N && window.I18N.t ? window.I18N.t(k, fb) : fb);
+
 function acctLoginScreen(bootstrap){
   acctOverlay(true, `
     <div style="max-width:380px;margin:8vh auto 0">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <h2 style="margin:0">${bootstrap ? '建立擁有者帳戶' : '登入'}</h2>
-          <button class="ghost" id="acctClose" style="padding:2px 8px;font-size:16px;cursor:pointer" title="關閉">✕</button>
+          <h2 style="margin:0">${bootstrap ? _tr('account.modal_title_bootstrap', '建立擁有者帳戶') : _tr('account.modal_title_login', '登入')}</h2>
+          <button class="ghost" id="acctClose" style="padding:2px 8px;font-size:16px;cursor:pointer" title="${_tr('account.btn_close', '關閉')}">✕</button>
         </div>
         <div class="hint" style="margin-bottom:14px;line-height:1.7">
           ${bootstrap
-            ? '這個代理還沒有任何帳戶。建立第一個 —— 它就是擁有者，可以再開其他帳戶。'
-            : '帳戶只存在你自己的代理裡，密碼不會上傳到任何地方。'}
+            ? _tr('account.hint_bootstrap', '這個代理還沒有任何帳戶。建立第一個 —— 它就是擁有者，可以再開其他帳戶。')
+            : _tr('account.hint_login', '帳戶只存在你自己的代理裡，密碼不會上傳到任何地方。')}
         </div>
         <div class="field">
-          <label>帳號</label>
-          <input id="acctName" autocomplete="username" placeholder="${bootstrap ? 'owner' : '帳號'}" value="${bootstrap ? 'owner' : ''}">
+          <label>${_tr('account.username', '帳號')}</label>
+          <input id="acctName" autocomplete="username" placeholder="${bootstrap ? 'owner' : _tr('account.username', '帳號')}" value="${bootstrap ? 'owner' : ''}">
         </div>
         <div class="field">
-          <label>密碼</label>
-          <input id="acctPass" type="password" autocomplete="${bootstrap ? 'new-password' : 'current-password'}" placeholder="至少 8 個字元">
+          <label>${_tr('account.password', '密碼')}</label>
+          <input id="acctPass" type="password" autocomplete="${bootstrap ? 'new-password' : 'current-password'}" placeholder="${_tr('account.err_short_pw', '密碼至少 8 個字元')}">
         </div>
-        <button class="primary" id="acctGo" style="width:100%">${bootstrap ? '建立並登入' : '登入'}</button>
-        <button class="ghost" id="acctSkip" style="width:100%;margin-top:8px">${bootstrap ? '稍後設定，直接使用控制台' : '關閉'}</button>
+        <button class="primary" id="acctGo" style="width:100%">${bootstrap ? _tr('account.btn_bootstrap', '建立並登入') : _tr('account.btn_login', '登入')}</button>
+        <button class="ghost" id="acctSkip" style="width:100%;margin-top:8px">${bootstrap ? _tr('account.btn_skip', '稍後設定，直接使用控制台') : _tr('account.btn_close', '關閉')}</button>
         <div id="acctErr" style="color:var(--bad);font-size:12px;margin-top:10px"></div>
         <div class="hint" style="margin-top:14px;font-size:11.5px">
           也可以在終端機用 <code>acct init</code> / <code>python triad.py acct init</code> 建立。
@@ -87,8 +89,8 @@ function acctLoginScreen(bootstrap){
     const pw = $('#acctPass').value || '';
     const err = $('#acctErr');
     err.textContent = '';
-    if (!name) { err.textContent = '請填帳號'; return; }
-    if (pw.length < 8) { err.textContent = '密碼至少 8 個字元'; return; }
+    if (!name) { err.textContent = _tr('account.err_missing_name', '請填帳號'); return; }
+    if (pw.length < 8) { err.textContent = _tr('account.err_short_pw', '密碼至少 8 個字元'); return; }
     $('#acctGo').disabled = true;
     try {
       const r = await acctFetch('/a/login', {

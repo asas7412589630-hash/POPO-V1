@@ -842,237 +842,28 @@ def log(msg: str) -> None:
 # was fully read — every caller here closes the response first, which is the
 # same precondition the stdlib's own connection reuse relies on.
 # ---------------------------------------------------------------------------
-_CONN_POOL = {}
-_CONN_POOL_LOCK = threading.Lock()
-UPSTREAM_POOL_SIZE = int(os.environ.get("ARMOR_POOL_SIZE", "6"))
-# Hit/miss counters, surfaced on /healthz. Without them "the pool is working"
-# is an assumption: a health check that silently falls through to a fresh
-# connection every time looks exactly like a healthy service.
-_POOL_STATS = {"hit": 0, "miss": 0, "stale": 0}
-_POOL_STATS_LOCK = threading.Lock()
-
-
-def _conn_key(cls, host, port, tls):
-    return (cls, host, port, bool(tls))
-
-
-def _pool_take(key):
-    """Pop a live connection for `key`, or None. Never returns a dead socket."""
-    with _CONN_POOL_LOCK:
-        idle = _CONN_POOL.get(key)
-        if not idle:
-            return None
-        conn = idle.pop()
-    try:
-        sock = conn.sock
-        if sock is None:
-            return None
-        # A pooled socket may have been closed by the far end while it sat
-        # here. An idle keep-alive connection should have nothing to read, so
-        # "readable" means either EOF or a stray pipelined byte — both make it
-        # unusable for the next request.
-        #
-        # select() is used instead of a non-blocking recv() with MSG_PEEK:
-        # recv(bufsize, flags) rejects the flags argument on this PRoot host
-        # (OSError EINVAL), which silently made every pooled connection look
-        # dead — the pool then never reused anything (measured 2026-11-03).
-        try:
-            ready, _, _ = select.select([sock], [], [], 0)
-        except Exception:
-            ready = [sock]
-        if ready:
-            try:
-                sock.settimeout(0.2)
-                junk = sock.recv(1)
-            except Exception:
-                junk = b""
-            if junk == b"":
-                with _POOL_STATS_LOCK:
-                    _POOL_STATS["stale"] += 1
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-                return None
-            # Unexpected bytes on an idle socket: do not trust it.
-            try:
-                conn.close()
-            except Exception:
-                pass
-            return None
-        return conn
-    except Exception:
-        try:
-            conn.close()
-        except Exception:
-            pass
-        return None
-
-
-def _pool_put(key, conn):
-    """Return a connection for reuse. Caller has already consumed the response."""
-    if conn is None:
-        return
-    try:
-        if conn.sock is None:
-            return
-    except Exception:
-        return
-    with _CONN_POOL_LOCK:
-        idle = _CONN_POOL.setdefault(key, [])
-        if len(idle) >= UPSTREAM_POOL_SIZE:
-            try:
-                conn.close()
-            except Exception:
-                pass
-            return
-        idle.append(conn)
-
-
-def _pool_drop(key, conn):
-    """Close a connection that must not be reused (error / unknown state)."""
-    if conn is None:
-        return
-    try:
-        conn.close()
-    except Exception:
-        pass
-
-
-def _pool_clear():
-    with _CONN_POOL_LOCK:
-        for idle in _CONN_POOL.values():
-            for conn in idle:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-        _CONN_POOL.clear()
-
-
-def _route_request(route_cls, host, port, tls, kwargs, method, path,
-                   body=None, headers=None):
-    """Send one request, transparently replacing a stale pooled connection.
-
-    Returns (conn, pool_key, resp).
-
-    A pooled socket can die between the health check and the write (NAT idle
-    timeout, upstream restart, a proxy in between dropping the flow). That is a
-    transport problem, not an upstream failure, so it is retried exactly once on
-    a fresh socket before the caller ever sees an error. Without this guard,
-    connection reuse converts an occasional upstream hiccup into a spurious
-    `upstream.unreachable` that the client shows to the user.
-
-    The retry is deliberately narrow, because these are POSTs to a metered API:
-    sending one twice costs real money and can duplicate a tool call.
-
-      * only a connection taken FROM THE POOL is retried — a failure on a fresh
-        socket is a genuine network/upstream problem and is surfaced as-is;
-      * only a failure while WRITING is retried. Once `request()` has returned,
-        the bytes are out and the upstream may already be generating; a failure
-        in `getresponse()` must not be replayed. That case is reported.
-
-    A stale pooled socket fails in `request()` (EPIPE/ECONNRESET), which is
-    precisely the case this covers, so the guard fires when it should and stays
-    out of the way otherwise.
-    """
-    key = _conn_key(route_cls, host, port, tls)
-    conn = _pool_take(key)
-    with _POOL_STATS_LOCK:
-        if conn is not None:
-            _POOL_STATS["hit"] += 1
-        else:
-            _POOL_STATS["miss"] += 1
-
-    reused = conn is not None
-    if not reused:
-        conn = route_cls(host, port, **kwargs)
-
-    try:
-        conn.request(method, path, body=body, headers=headers)
-    except Exception as exc:
-        _pool_drop(key, conn)
-        if not reused:
-            raise
-        # A pooled socket died on write: nothing reached the upstream as a
-        # complete request, so one retry on a fresh connection is safe.
-        log("[pool] stale connection on write (%s) — retrying once"
-            % type(exc).__name__)
-        with _POOL_STATS_LOCK:
-            _POOL_STATS["stale"] += 1
-        fresh = route_cls(host, port, **kwargs)
-        try:
-            fresh.request(method, path, body=body, headers=headers)
-            return fresh, key, fresh.getresponse()
-        except Exception:
-            _pool_drop(key, fresh)
-            raise exc
-
-    # The request is on the wire. Any failure from here on is reported, never
-    # replayed: a duplicate POST costs a duplicate completion.
-    try:
-        resp = conn.getresponse()
-    except Exception:
-        _pool_drop(key, conn)
-        raise
-    return conn, key, resp
-
-
-def _looks_anthropic_body(obj) -> bool:
-    """True when a parsed request body is shaped like an Anthropic Messages call.
-
-    The discriminator is what the two schemas disagree about, not what they share:
-    every Anthropic body allows `system` as a top-level string/block list and
-    uses `max_tokens` + `messages`, while an OpenAI body puts the system prompt
-    inside `messages` and has no top-level `system` field at all. Content blocks
-    (`[{"type": "text", ...}]`) are a second strong signal.
-
-    Deliberately conservative: an ambiguous body is treated as OpenAI, because a
-    false positive here rewrites the caller's request while a false negative only
-    produces an upstream 400 that names the missing field.
-    """
-    if not isinstance(obj, dict):
-        return False
-    has_anthropic_markers = ("system" in obj
-                             or "stop_sequences" in obj
-                             or "anthropic_version" in obj)
-    msgs = obj.get("messages")
-    if not isinstance(msgs, list) or not msgs:
-        # No messages at all: a bare {model, max_tokens} is equally valid in
-        # both, so do not claim it.
-        return False
-    # Content blocks with a "type" of text/image/tool_use appear only in the
-    # Anthropic schema; OpenAI uses a string or [{type:"text"}] but the latter
-    # is uncommon and would still translate losslessly.
-    blocks = False
-    for m in msgs:
-        if not isinstance(m, dict):
-            continue
-        c = m.get("content")
-        if isinstance(c, list):
-            for part in c:
-                if isinstance(part, dict) and part.get("type") in (
-                        "tool_use", "tool_result", "image"):
-                    blocks = True
-                    break
-        if blocks:
-            break
-    # An OpenAI-only field is a hard veto.
-    for k in ("response_format", "functions", "function_call", "n", "seed",
-              "logprobs", "stream_options", "presence_penalty",
-              "frequency_penalty", "logit_bias"):
-        if k in obj:
-            return False
-    # `tools` exists in both schemas but is shaped differently: Anthropic uses
-    # {name, description, input_schema}, OpenAI nests the spec under "function".
-    tools = obj.get("tools")
-    if isinstance(tools, list) and tools:
-        first = tools[0] if isinstance(tools[0], dict) else {}
-        if "function" in first:
-            return False
-        if "input_schema" in first:
-            return True
-    return bool(has_anthropic_markers or blocks)
+# Upstream connection reuse & Anthropic shape detection (decoupled)
+# ---------------------------------------------------------------------------
+from armor_pool import (
+    _CONN_POOL,
+    _CONN_POOL_LOCK,
+    UPSTREAM_POOL_SIZE,
+    _POOL_STATS,
+    _POOL_STATS_LOCK,
+    _TLS_CONTEXT,
+    _TLS_CONTEXT_LOCK,
+    _conn_key,
+    _pool_take,
+    _pool_put,
+    _pool_drop,
+    _pool_clear,
+    _route_request,
+    _tls_context,
+    pool_stats,
+    set_pool_logger,
+)
+set_pool_logger(log)
+from anthropic_shape import looks_anthropic_body as _looks_anthropic_body
 
 
 def _read(path: str) -> str:
@@ -1415,94 +1206,13 @@ def _rotate_key(reason: str = "") -> str:
 # One context for the process. `SSLContext` is documented as thread-safe for
 # connection creation, which is all any caller here does with it.
 # ---------------------------------------------------------------------------
-_TLS_CONTEXT = None
-_TLS_CONTEXT_LOCK = threading.Lock()
-
-_UPSTREAM_UA = (os.environ.get("ARMOR_UPSTREAM_UA") or "").strip()
-# A WAF-free default: some providers sit behind Cloudflare/Akamai and treat a
-# request with no Accept-Language, no UA or a `python-urllib` UA as a bot. The
-# proxy used to forward whatever the client sent, which meant a script-driven
-# client was rejected at the edge while the same request from a browser worked.
-_DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
-_BOT_UA_RE = re.compile(r"^(python-?(urllib|requests|httpx)|curl/|wget/|java/|go-http-client)",
-                        re.I)
-
-
-def _normalise_upstream_headers(headers: dict) -> None:
-    """Make the outbound request look like an ordinary client to the edge.
-
-    Handles the "the hosting node's IP is not trusted by some sites" problem at
-    the layer this proxy controls. Three levers, none of which change the body:
-
-      1. User-Agent. If ARMOR_UPSTREAM_UA is set, it wins. Otherwise a client UA
-         that libraries are known to send (python-urllib, curl, Go) is replaced
-         with a browser UA — those strings are on every WAF's block list and a
-         blocked request never reaches the model at all.
-      2. Accept-Language. Absent it, most WAFs score the request as automated.
-      3. Accept. Some gateways 406 without it.
-
-    Everything the CALLER set explicitly is preserved, so a client that wants a
-    specific UA keeps it. This only fills gaps and rewrites bot signatures.
-    """
-    try:
-        cur = ""
-        for k in list(headers.keys()):
-            if k.lower() == "user-agent":
-                cur = str(headers.pop(k) or "")
-        if _UPSTREAM_UA:
-            headers["User-Agent"] = _UPSTREAM_UA
-        elif not cur or _BOT_UA_RE.match(cur.strip()):
-            headers["User-Agent"] = _DEFAULT_UA
-        else:
-            headers["User-Agent"] = cur
-
-        if not any(k.lower() == "accept-language" for k in headers):
-            headers["Accept-Language"] = "en-US,en;q=0.9,zh-TW;q=0.8"
-        if not any(k.lower() == "accept" for k in headers):
-            headers["Accept"] = "application/json, text/event-stream, */*"
-    except Exception:
-        # Header cosmetics must never fail a request.
-        pass
-
-
-def _looks_like_edge_block(status: int, hdrs, body: bytes) -> bool:
-    """Did an edge/WAF reject this, rather than the API?
-
-    A Cloudflare challenge is a 403 (or 503) whose body is HTML with a
-    cf-* marker, not the provider's JSON error shape. Detecting it matters
-    because those requests never reached the model: retrying the same prompt is
-    pointless, but retrying ONCE with a corrected header set often works, and
-    the caller deserves to be told "the edge refused you" rather than "the model
-    has no such model".
-    """
-    if status not in (403, 429, 503):
-        return False
-    try:
-        for k in ("cf-mitigated", "cf-ray", "x-served-by", "server"):
-            v = (hdrs.get(k) or "") if hasattr(hdrs, "get") else ""
-            if k == "cf-mitigated" and v:
-                return True
-        low = (body or b"")[:2000].lower()
-        if b"<html" in low and any(t in low for t in (b"cloudflare", b"attention required",
-                                                      b"access denied", b"captcha")):
-            return True
-        if b"cf-error" in low or b"ray id" in low:
-            return True
-    except Exception:
-        return False
-    return False
-
-
-def _tls_context():
-    """Process-wide default client TLS context (built once, reused thereafter)."""
-    global _TLS_CONTEXT
-    if _TLS_CONTEXT is not None:
-        return _TLS_CONTEXT
-    with _TLS_CONTEXT_LOCK:
-        if _TLS_CONTEXT is None:
-            _TLS_CONTEXT = ssl.create_default_context()
-    return _TLS_CONTEXT
+from armor_headers import (
+    _UPSTREAM_UA,
+    _DEFAULT_UA,
+    _BOT_UA_RE,
+    _normalise_upstream_headers,
+    _looks_like_edge_block,
+)
 
 
 def _catalog_worker(auth: str = "") -> None:
@@ -4857,8 +4567,7 @@ def _dump_body(body: dict, armor: str, path: str) -> None:
 
 
 
-def _rid_now() -> str:
-    return str(int(time.time() * 1000))
+from armor_headers import _rid_now
 
 
 _ENSURED_DIRS = set()
@@ -5875,58 +5584,7 @@ def too_short_after_retry(text: str) -> bool:
         return False
 
 
-class _RateLimiter:
-    """Sliding-window counters per identity, config from rate_limit.json."""
-
-    def __init__(self, path: str):
-        self.path = path
-        self.cfg = {}
-        self.state = {}          # identity -> {minute: [ts...], hour: [...], day: [...]}
-        self.lock = threading.Lock()
-
-    def _reload(self) -> None:
-        cfg = _read_json(self.path)
-        if cfg:
-            self.cfg = cfg
-
-    def enabled(self) -> bool:
-        if not self.cfg:
-            self._reload()
-        return bool(self.cfg.get("enabled"))
-
-    def check(self, identity: str, path: str) -> tuple:
-        """Returns (ok, window_name)."""
-        if not self.enabled():
-            return True, "-"
-        paths_cfg = self.cfg.get("paths") or {}
-        prefixes = paths_cfg.get("apply_prefixes") or []
-        if prefixes and not any(path.startswith(p) for p in prefixes):
-            return True, "-"
-        if path in (paths_cfg.get("exclude_exact") or []):
-            return True, "-"
-
-        scope = (self.cfg.get("scopes") or {}).get("global") or {}
-        per_min = float(scope.get("per_minute") or 0)
-        per_hour = float(scope.get("per_hour") or 0)
-        per_day = float(scope.get("per_day") or 0)
-        now = time.time()
-
-        with self.lock:
-            st = self.state.setdefault(identity, {"minute": [], "hour": [], "day": []})
-            st["minute"] = [t for t in st["minute"] if now - t < 60]
-            st["hour"] = [t for t in st["hour"] if now - t < 3600]
-            st["day"] = [t for t in st["day"] if now - t < 86400]
-            if per_min and len(st["minute"]) >= per_min:
-                return False, "minute"
-            if per_hour and len(st["hour"]) >= per_hour:
-                return False, "hour"
-            if per_day and len(st["day"]) >= per_day:
-                return False, "day"
-            st["minute"].append(now)
-            st["hour"].append(now)
-            st["day"].append(now)
-        return True, "-"
-
+from armor_limiter import RateLimiter as _RateLimiter
 
 RATE_LIMITER = _RateLimiter(RATE_LIMIT_FILE)
 
@@ -6248,33 +5906,11 @@ def _media_query_key_ok(hdrs, query: str) -> bool:
     return ok
 
 
-def _is_loopback(addr: str) -> bool:
-    a = (addr or "").strip()
-    return a.startswith("127.") or a in ("::1", "localhost", "")
-
-
-def _forwarded_client(hdrs) -> str:
-    """Real client IP when a tunnel/proxy sits in front of us.
-
-    Cloudflare sends `CF-Connecting-IP`; generic proxies send `X-Forwarded-For`
-    or `X-Real-IP`. Any of these means the TCP peer being loopback is an
-    artefact of the tunnel, NOT proof the caller is local — so the key check
-    must apply.
-    """
-    for h in ("CF-Connecting-IP", "cf-connecting-ip",
-              "X-Real-IP", "x-real-ip",
-              "X-Forwarded-For", "x-forwarded-for"):
-        v = (hdrs.get(h) or "").strip()
-        if v:
-            return v.split(",")[0].strip()
-    return ""
-
-
-def _ip_from_headers(hdrs) -> str:
-    xf = (hdrs.get("X-Forwarded-For") or hdrs.get("x-forwarded-for") or "").strip()
-    if xf:
-        return xf.split(",")[0].strip()
-    return ""
+from armor_headers import (
+    _is_loopback,
+    _forwarded_client,
+    _ip_from_headers,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -9091,6 +8727,7 @@ class Handler(BaseHTTPRequestHandler):
 
             saw_done = False
             broke = False
+            client_gone = False
             # Set only when the upstream stream reached EOF on its own. A socket
             # abandoned mid-stream (client gone, upstream broke) must not go back
             # into the pool: the next request would read the leftover body.
@@ -9158,6 +8795,8 @@ class Handler(BaseHTTPRequestHandler):
                     if handoff_turn:
                         capture_sse_text(chunk, handoff_acc)
             except (BrokenPipeError, ConnectionResetError):
+                client_gone = True
+                broke = True
                 log("[warn] client went away mid-stream")
             except Exception as exc:
                 broke = True
@@ -9279,7 +8918,7 @@ class Handler(BaseHTTPRequestHandler):
                             pass
 
                 # An SSE stream must end with a [DONE] event. Without it the
-                if broke and not saw_done:
+                if broke and not saw_done and not client_gone:
                     try:
                         tail = b"data: [DONE]\n\n"
                         self.wfile.write(b"%X\r\n" % len(tail) + tail + b"\r\n")
@@ -9292,7 +8931,7 @@ class Handler(BaseHTTPRequestHandler):
                 # necessarily committed before the sniff ran. A standard parser
                 # ignores a comment line; our own client reads it and marks the
                 # bubble as retried / passed instead of clean.
-                if _turn_verdict:
+                if _turn_verdict and not client_gone:
                     try:
                         if _turn_verdict.get("retries") or _turn_verdict.get("verdict") not in ("", "ok"):
                             _line = (":armor " + json.dumps(_turn_verdict, ensure_ascii=False)
@@ -9301,11 +8940,12 @@ class Handler(BaseHTTPRequestHandler):
                             self.wfile.flush()
                     except Exception:
                         pass
-                try:
-                    self.wfile.write(b"0\r\n\r\n")
-                    self.wfile.flush()
-                except Exception:
-                    pass
+                if not client_gone:
+                    try:
+                        self.wfile.write(b"0\r\n\r\n")
+                        self.wfile.flush()
+                    except Exception:
+                        pass
             dt = time.time() - t0
             disp = f"{target_model}->{model_swapped}" if model_swapped else target_model
             log(f"{method} {path} -> {stream_resp.status} model={disp} "

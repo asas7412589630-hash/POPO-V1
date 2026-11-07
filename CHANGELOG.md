@@ -5,6 +5,35 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.5.0] — 2026-11-07
+
+### Decoupled & Refactored
+
+- **Extracted `armor_pool.py`**: Modularized upstream HTTP/HTTPS connection pooling, socket liveness
+  probing, write-retry handlers, and TLS context caching out of `armor_proxy.py`. Re-exported all
+  symbols with 100% backward compatibility for existing scripts and callers.
+- **Extracted `armor_headers.py`**: Decoupled WAF bot signature sanitization (`_normalise_upstream_headers`),
+  edge-block heuristic detection (`_looks_like_edge_block`), reverse-proxy client IP resolution
+  (`_forwarded_client`, `_ip_from_headers`), loopback detection (`_is_loopback`), and monotonic
+  request ID generation (`_rid_now`).
+- **Extracted `armor_limiter.py`**: Separated sliding-window rate limiting into a dedicated module with
+  automated memory eviction (`prune()`) to prevent unbounded memory growth from ephemeral identities.
+- **Decoupled Anthropic Shape Detection**: Moved `looks_anthropic_body` into `anthropic_shape.py` and
+  re-exported it in `armor_proxy.py`.
+
+### Optimized
+
+- **Streaming Premature Disconnect Handling**: In `armor_proxy.py` streaming loop, premature client
+  disconnection (`BrokenPipeError`, `ConnectionResetError`) now sets `client_gone = True`, preventing
+  wasteful secondary writes and exceptions when flushing synthetic `[DONE]` or comment frames.
+- **Web Console Account Modal Localization**: Added full tri-lingual i18n support (`zh-Hant`, `zh-Hans`,
+  `en`) for all strings, placeholders, and error messages in `console/account.js` and `console/i18n.js`.
+- **Expanded Offline Test Matrix to 31 Suites**: Created dedicated unit test suites `test_armor_pool.py`,
+  `test_armor_headers.py`, and `test_armor_limiter.py`. All 31 suites in `run_tests.py` and 45 assertions
+  in `test_theoretical_features_e2e.py` pass cleanly.
+
+---
+
 ## [2.4.0] — 2026-11-07
 
 ### Fixed
