@@ -557,10 +557,16 @@ curl -H "Authorization: Bearer $API_KEY" \
 
 ---
 
-## 授權
+## 授權與版權
 
 本專案採用 **[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.zh-Hant)**：
 **姓名標示 + 非商業性**。
+
+### 版權所屬 (Copyright)
+
+**Copyright © 2026 [asas7412589630-hash](https://github.com/asas7412589630-hash) & [Minglink](https://github.com/Minglink). All rights reserved.**
+
+本專案由 [asas7412589630-hash](https://github.com/asas7412589630-hash) 與 [Minglink](https://github.com/Minglink) 共同創建與聯合維護。詳細作者與維護者名錄請參閱 [AUTHORS.md](AUTHORS.md)。
 
 | 你可以 | 條件 |
 |---|---|
@@ -592,3 +598,11 @@ curl -H "Authorization: Bearer $API_KEY" \
 > 授權本身完全有效——以 `LICENSE` 檔的內容為準，不是以側邊欄為準。
 
 使用前請重讀最上面的免責聲明。**這個工具本身是中性的，怎麼用取決於你。**
+
+---
+
+<div align="center">
+
+**POPO-V1 (Prism / Triad)** · 版權所有 © 2026 [asas7412589630-hash](https://github.com/asas7412589630-hash) & [Minglink](https://github.com/Minglink)
+
+</div>

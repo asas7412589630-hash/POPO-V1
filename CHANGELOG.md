@@ -21,6 +21,9 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Co-creator copyright declarations**: Added explicit joint copyright ownership declarations
+  attributing **asas7412589630-hash** and **Minglink** across `README.md`, `README.en.md`, and
+  the Web Console About view.
 - **Native Windows CLI account management**: Added `acct.bat` and `acct.ps1` wrappers for Windows
   CMD and PowerShell, and integrated `python triad.py acct <cmd>` subcommand delegation.
 - **End-to-end bootstrap login test**: Added Web bootstrap login and session persistence assertions

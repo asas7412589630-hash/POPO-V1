@@ -601,10 +601,16 @@ private channel, never a public issue.
 
 ---
 
-## License
+## License & Copyright
 
 Released under **[CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)**:
 **Attribution + NonCommercial**.
+
+### Copyright
+
+**Copyright © 2026 [asas7412589630-hash](https://github.com/asas7412589630-hash) & [Minglink](https://github.com/Minglink). All rights reserved.**
+
+POPO-V1 (Prism / Triad) is co-created and collaboratively maintained by [asas7412589630-hash](https://github.com/asas7412589630-hash) and [Minglink](https://github.com/Minglink). For the full list of authors, maintainers and contributions, see [AUTHORS.md](AUTHORS.md).
 
 | You may | Condition |
 |---|---|
@@ -637,3 +643,11 @@ with the intended use, scale and form. Replies as soon as possible.
 
 Please re-read the disclaimer at the top before use. **The tool is neutral; what
 matters is what you do with it.**
+
+---
+
+<div align="center">
+
+**POPO-V1 (Prism / Triad)** · Copyright © 2026 [asas7412589630-hash](https://github.com/asas7412589630-hash) & [Minglink](https://github.com/Minglink)
+
+</div>
