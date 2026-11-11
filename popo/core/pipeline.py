@@ -39,6 +39,9 @@ from popo.core.turn_recording import (record_failure as _record_failure,
                                      record_success as _record_success,
                                      trace as _trace)
 from popo.core.stream_capture import SSECapture
+from popo.core.stream_helpers import (RETRY_MARK, abort_stream as _abort,
+                                      content_free_chunk as _content_free_chunk,
+                                      read_chunk as _read_chunk)
 from popo.core.upstream import UpstreamSource
 from popo.errors import ErrorKind, ProxyError
 from popo.storage.records import RecordStore
@@ -533,7 +536,15 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
                         records: RecordStore | None = None,
                         conversation_id: str = "", client_key_id: str = "",
                         armor_level: str | None = None) -> StreamingPipelineResult:
-    """Streaming request with a bounded pre-commit inspection window."""
+    """Streaming request with a bounded pre-commit inspection window.
+
+    Answer text is buffered only until its opening can be classified (96
+    characters of content); reasoning, role and metadata events are forwarded
+    live, so a thinking model is visible while the decision is still pending.
+    Once a content byte reaches the client the stream is committed — a retry
+    can no longer replace it, and the pipeline reports ``retry_failed`` instead
+    of pretending otherwise.
+    """
     if records is None:
         records = RecordStore(config.data_dir)
     profile_for = getattr(source_picker, "profile_for", None)
@@ -579,52 +590,66 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
             inspected_text: list[str] = []
             inspected_bytes = 0
             decision: str | None = None
-            while True:
-                chunk = _read_chunk(stream)
-                if not chunk:
-                    break
-                buffered.append(chunk)
-                # SSE framing and reasoning metadata can be large before the
-                # first user-visible token. Measure the inspection window on
-                # emitted text, not raw transport bytes, or an empty prefix is
-                # mistaken for an empty completion and retried prematurely.
-                text = capture.feed(chunk)
-                if text:
-                    inspected_text.append(text)
-                    inspected_bytes += len(text.encode("utf-8"))
-                if capture.has_tool_calls:
-                    # A tool-call delta is a valid completion even though it
-                    # contains no prose. Do not discard it as an empty answer.
-                    decision = "clean"
-                    break
-                if inspected_bytes < STREAM_DECISION_BYTES:
-                    continue
-                decision = classify_stream("".join(inspected_text))
-                break
-            if decision is None:
-                tail = capture.finish()
-                if tail:
-                    inspected_text.append(tail)
-                # A genuinely empty stream is classified only after EOF. Short
-                # but valid answers are judged from the text that actually
-                # arrived, regardless of how much SSE metadata preceded it.
-                decision = classify_stream("".join(inspected_text))
-
-            may_retry_refusal = config.retry_on_refusal or decision != "refusal"
-            if decision in ("refusal", "empty") and may_retry_refusal and plan.can_retry():
-                # Nothing reached the client yet, so discarding is safe — and
-                # aborting (not draining) is what stops the provider billing.
-                _abort(stream)
-                _trace(records, ctx, attempt_number, decision,
-                       text="".join(capture.text_parts))
-                continue
-
-            report["attempts"] = max(0, attempt_number - 1)
-            report["verdict"] = _stream_verdict(decision, attempt_number)
-            stream_content = "".join(capture.text_parts)
-            report["score"] = score(stream_content, ctx.shape).score
-
+            stream_content = ""
+            held_commit = False
             try:
+                while True:
+                    chunk = _read_chunk(stream)
+                    if not chunk:
+                        break
+                    text = capture.feed(chunk)
+                    if (not held_commit
+                            and inspected_bytes < STREAM_DECISION_BYTES
+                            and not text
+                            and not capture.has_tool_calls
+                            and _content_free_chunk(chunk)):
+                        # Reasoning/role/metadata events before any answer
+                        # text: visible immediately. The answer text itself
+                        # stays buffered until the opening is classified, and
+                        # once a chunk is held everything after it is held too
+                        # so [DONE]/finish never overtake buffered content.
+                        yield chunk
+                        continue
+                    buffered.append(chunk)
+                    held_commit = True
+                    if text:
+                        inspected_text.append(text)
+                        inspected_bytes += len(text.encode("utf-8"))
+                    if capture.has_tool_calls:
+                        # A tool-call delta is a valid completion even though it
+                        # contains no prose. Do not discard it as an empty answer.
+                        decision = "clean"
+                        break
+                    if inspected_bytes < STREAM_DECISION_BYTES:
+                        continue
+                    decision = classify_stream("".join(inspected_text))
+                    break
+                if decision is None:
+                    tail = capture.finish()
+                    if tail:
+                        inspected_text.append(tail)
+                    # A genuinely empty stream is classified only after EOF. Short
+                    # but valid answers are judged from the text that actually
+                    # arrived, regardless of how much SSE metadata preceded it.
+                    decision = classify_stream("".join(inspected_text))
+
+                may_retry_refusal = config.retry_on_refusal or decision != "refusal"
+                if decision in ("refusal", "empty") and may_retry_refusal and plan.can_retry():
+                    # No answer text reached the client (content chunks are all
+                    # still buffered), so discarding is safe. Reasoning events
+                    # already shown stay visible; the comment line tells the
+                    # client why. Aborting — not draining — stops the billing.
+                    yield RETRY_MARK
+                    _abort(stream)
+                    _trace(records, ctx, attempt_number, decision,
+                           text="".join(capture.text_parts))
+                    continue
+
+                report["attempts"] = max(0, attempt_number - 1)
+                report["verdict"] = _stream_verdict(decision, attempt_number)
+                stream_content = "".join(capture.text_parts)
+                report["score"] = score(stream_content, ctx.shape).score
+
                 for chunk in buffered:
                     yield chunk
                 while True:
@@ -636,7 +661,8 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
             except GeneratorExit:
                 # The client hung up. Stopping our reader is not enough: the
                 # provider keeps generating (and billing) until its peer goes
-                # away, so close the socket explicitly.
+                # away, so close the socket explicitly. This also covers a
+                # disconnect during the inspection window.
                 _abort(stream)
                 report["aborted"] = True
                 report["verdict"] = "client_aborted"
@@ -656,40 +682,6 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
             return
 
     return StreamingPipelineResult(iterator=iterator(), report_fn=lambda: dict(report))
-
-
-def _read_chunk(stream) -> bytes:
-    """Return the next chunk from a stream handle or an iterator.
-
-    ``UpstreamStream`` exposes ``read()`` so a caller can stop early without the
-    generator ``finally`` closing the socket. Test doubles and alternative
-    transports may only be iterators, so both shapes are accepted here — at the
-    boundary, once, rather than scattered ``hasattr`` checks.
-    """
-    reader = getattr(stream, "read", None)
-    if reader is not None:
-        return reader()
-    try:
-        return next(stream)
-    except StopIteration:
-        return b""
-
-
-def _abort(stream) -> None:
-    """Stop an upstream stream without letting its failure surface as an error."""
-    abort = getattr(stream, "abort", None)
-    if abort is None:
-        close = getattr(stream, "close", None)
-        if close:
-            try:
-                close()
-            except (OSError, ProxyError):
-                pass
-        return
-    try:
-        abort()
-    except (OSError, ProxyError):
-        pass
 
 
 def _stream_verdict(decision: str, attempt_number: int) -> str:

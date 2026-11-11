@@ -150,5 +150,60 @@ class TestStreamManager(unittest.TestCase):
         self.assertEqual(records.messages[-1]["tool_calls"][0]["id"], "call_1")
 
 
+class ReasoningVisibilityTests(unittest.TestCase):
+    """The pre-commit window must not hide a thinking model.
+
+    Found 2026-11-12: every SSE event was buffered until 96 characters of
+    answer text had accumulated, so a reasoning model's whole thinking phase
+    (30-120s on real providers) was invisible to the client — reported as
+    "文字卡住". Reasoning/role/metadata events now pass through live; answer
+    text, finish and [DONE] stay ordered behind the buffered content.
+    """
+
+    def _run(self, *chunks):
+        request = ChatRequest(model="glm-5.3", stream=True,
+                              messages=[{"role": "user", "content": "hi"}])
+        source = FakeSource(*chunks)
+        result = run_pipeline_stream(request, Config(retry_max=1),
+                                     source_picker=lambda _: source)
+        return list(result.iterator), result.report_fn()
+
+    def test_reasoning_events_are_forwarded_before_the_decision(self):
+        reasoning = sse_data({"choices": [{"delta": {"reasoning_content": "想"}}]})
+        content = sse_data({"choices": [{"delta": {"content": "答"}}]})
+        finish = sse_data({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+        chunks, report = self._run(reasoning, content, finish, b"data: [DONE]\n\n")
+        # The reasoning event was emitted live, not held for the decision.
+        self.assertEqual(chunks[0], reasoning)
+        # Answer text, finish and [DONE] keep their relative order after it:
+        # a client that stops at [DONE] must never miss buffered content.
+        self.assertEqual(chunks[1:], [content, finish, b"data: [DONE]\n\n"])
+        self.assertEqual(report["verdict"], "stream")
+
+    def test_done_is_never_forwarded_ahead_of_buffered_content(self):
+        content = sse_data({"choices": [{"delta": {"content": "x"}}]})
+        finish = sse_data({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+        chunks, _ = self._run(content, finish, b"data: [DONE]\n\n")
+        joined = b"".join(chunks)
+        self.assertLess(joined.index(b'"content"'), joined.index(b"[DONE]"))
+
+    def test_retry_emits_a_liveness_comment(self):
+        refusal = sse_data({"choices": [{"delta": {"content": "我無法"}}]})
+        clean = sse_data({"choices": [{"delta": {"content": "ok"}}]})
+        request = ChatRequest(model="glm-5.3", stream=True,
+                              messages=[{"role": "user", "content": "x"}])
+        calls = {"n": 0}
+
+        def picker(_):
+            calls["n"] += 1
+            return FakeSource(refusal) if calls["n"] == 1 else FakeSource(clean)
+
+        result = run_pipeline_stream(request, Config(retry_max=3),
+                                     source_picker=picker)
+        chunks = list(result.iterator)
+        self.assertIn(b": popo retry", chunks[0])
+        self.assertEqual(result.report_fn()["verdict"], "retry_ok")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -133,6 +133,25 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(router.profile_for("defaulted"), "native_kimi")
         self.assertEqual(router.profile_for("unknown"), "")
 
+    def test_profile_for_follows_live_config_not_build_time_snapshot(self):
+        # The router is cached for the life of the process while the console
+        # mutates config.model_profiles in place on every re-apply. Reading a
+        # build-time snapshot left every later console edit invisible until a
+        # restart (found 2026-11-12).
+        from popo.config import Config
+        catalog = SourceCatalog().add_source(_source())
+        catalog = catalog.publish("alpha", ["m"])
+        config = Config(model_profiles={"m": "native_glm"})
+        router = SourceRouter(catalog, {"alpha": ["ka"]},
+                              default_profiles={"m": "off"}, config=config)
+        self.assertEqual(router.profile_for("m"), "native_glm")
+        config.model_profiles = {"m": "off"}
+        self.assertEqual(router.profile_for("m"), "off")
+        # A route-level override still outranks the live config.
+        catalog = catalog.publish("alpha", ["m"], profiles={"m": "native_kimi"})
+        router_with_route = SourceRouter(catalog, {"alpha": ["ka"]}, config=config)
+        self.assertEqual(router_with_route.profile_for("m"), "native_kimi")
+
 
 class StoreTests(unittest.TestCase):
     def setUp(self):

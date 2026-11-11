@@ -123,7 +123,7 @@ INVERTED_ALIASES: dict[str, tuple[str, ...]] = {
 class Config:
     """Runtime configuration for one proxy process."""
 
-    version = "2.7.13"
+    version = "2.7.14"
 
     __slots__ = tuple(dict.fromkeys(
         list(ENV_ALIASES) + ["upstream_key", "upstream_keys", "published_models",

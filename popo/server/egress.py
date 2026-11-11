@@ -45,6 +45,16 @@ BLOCKED_NETWORKS = (
     ipaddress.ip_network("fe80::/10"),
 )
 
+# RFC 2544 benchmarking space. Not an internal network and not routable on the
+# public internet — but it IS the default fake-IP pool of Clash/mihomo TUN mode.
+# On a machine whose DNS answers every name with a 198.18.x.x fake-IP, treating
+# the range as "private" would refuse every legitimate upstream probe
+# (measured 2026-11-12: api.example.invalid -> 198.18.0.104). The real egress is
+# mediated by the local TUN client, so the guard's SSRF concern does not apply.
+FAKEIP_NETWORKS = (
+    ipaddress.ip_network("198.18.0.0/15"),
+)
+
 
 class EgressError(ValueError):
     """The requested destination is not allowed."""
@@ -55,7 +65,11 @@ def _is_blocked_address(address: str) -> bool:
         parsed = ipaddress.ip_address(address)
     except ValueError:
         return True  # unresolvable text is not an address we can vouch for
-    if parsed.is_loopback or parsed.is_private or parsed.is_link_local:
+    if parsed.is_loopback or parsed.is_link_local:
+        return True
+    if any(parsed in network for network in FAKEIP_NETWORKS):
+        return False
+    if parsed.is_private:
         return True
     if parsed.is_multicast or parsed.is_reserved or parsed.is_unspecified:
         return True

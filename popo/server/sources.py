@@ -145,6 +145,17 @@ class SourceCatalog:
                                          base_url=source.base_url,
                                          profile=profiles.get(model_id, ""),
                                          namespaced=False)
+            elif (not routes[model_id].namespaced
+                    and routes[model_id].source_id == source_id):
+                # Re-publishing the same source updates its own bare alias —
+                # otherwise a changed profile applies to `src/model` only and
+                # the bare name every client actually uses keeps the old
+                # armour forever (found 2026-11-12). Another source's bare
+                # alias is still left untouched: no shadowing.
+                routes[model_id] = Route(source_id=source_id, model_id=model_id,
+                                         base_url=source.base_url,
+                                         profile=profiles.get(model_id, ""),
+                                         namespaced=False)
         return SourceCatalog(sources=dict(self.sources), routes=routes)
 
 
@@ -166,6 +177,7 @@ class SourceRouter:
                  *, timeout: float = 90.0, connect_timeout: float = 15.0,
                  user_agent: str = "", default_keys: list[str] | None = None,
                  default_profiles: dict[str, str] | None = None,
+                 config=None,
                  sticky_capacity: int = 4096):
         self.catalog = catalog
         self.secrets = secrets
@@ -174,6 +186,12 @@ class SourceRouter:
         self.user_agent = user_agent
         self.default_keys = list(default_keys or [])
         self.default_profiles = dict(default_profiles or {})
+        # Live config reference: the console mutates ``config.model_profiles``
+        # in place when the operator re-applies settings, and this router is
+        # cached for the life of the process. Reading the snapshot taken at
+        # build time left every later console edit invisible until a restart
+        # (found 2026-11-12: profile_for returned the pre-edit profile).
+        self._config = config
         self._cache: dict[tuple, UpstreamSource] = {}
         self._sticky: dict[str, str] = {}
         self._sticky_capacity = max(16, sticky_capacity)
@@ -204,7 +222,13 @@ class SourceRouter:
 
     def profile_for(self, model: str) -> str:
         route = self.catalog.route_for(model)
-        return (route.profile if route is not None else "") or self.default_profiles.get(model, "")
+        if route is not None and route.profile:
+            return route.profile
+        if self._config is not None:
+            live = str(getattr(self._config, "model_profiles", {}).get(model, "") or "")
+            if live:
+                return live
+        return self.default_profiles.get(model, "")
 
     def mark_failure(self, source_id: str) -> None:
         """Record a failed call; trip the breaker after a few in a row."""
@@ -375,4 +399,5 @@ def build_router(config, data_dir: str) -> SourceRouter | None:
                         connect_timeout=config.upstream_connect_timeout,
                         user_agent=config.upstream_ua,
                         default_keys=list(config.upstream_key or []),
-                        default_profiles=dict(getattr(config, "model_profiles", {})))
+                        default_profiles=dict(getattr(config, "model_profiles", {})),
+                        config=config)
