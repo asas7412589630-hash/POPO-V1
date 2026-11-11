@@ -15,7 +15,6 @@ from http import cookies
 from urllib.parse import parse_qs
 
 from popo.errors import ErrorKind, ProxyError
-from popo.server.anthropic_sse import iter_anthropic_events
 from popo.server import admin as admin_views
 from popo.server.console_routes import _degraded
 from popo.server import deps
@@ -58,12 +57,8 @@ class DiscoveryRoutes:
         query = parse_qs(parsed.query)
         model = (query.get("model") or ["glm-5.3"])[0]
         level = (query.get("level") or [None])[0]
-        # Without this the preview always showed automatic routing, so an
-        # operator who picked a family saw a different prompt than the one their
-        # next request would get.
-        profile = (query.get("profile") or [""])[0] or None
         try:
-            payload = self._inference().armor_preview(model, level, profile)
+            payload = self._inference().armor_preview(model, level)
         except (OSError, ValueError) as exc:
             raise ProxyError(ErrorKind.PROXY_NOT_AVAILABLE,
                              f"armor blocks unavailable: {exc}") from exc
@@ -146,7 +141,9 @@ class InferenceRoutes:
         """
         return deps.concurrency_of(self).slot()
 
-    def _armor_level(self) -> str | None:
+    def _armor_level(self, identity) -> str | None:
+        if identity.level not in ("operator", "loopback"):
+            return None
         return self._inference().armor_level(self.headers.get("X-Armor-Level", ""), self.cfg)
 
     def _conversation_hint(self, body: bytes) -> str:
@@ -165,7 +162,7 @@ class InferenceRoutes:
 
     def _route_chat(self, body, parsed, identity) -> None:
         service = self._inference()
-        level = self._armor_level()
+        level = self._armor_level(identity)
         if _wants_stream(body):
             with self._inference_slot():
                 _, result = service.chat_stream(
@@ -180,13 +177,13 @@ class InferenceRoutes:
 
     def _route_anthropic_messages(self, body, parsed, identity) -> None:
         service = self._inference()
-        level = self._armor_level()
+        level = self._armor_level(identity)
         if _wants_stream(body):
             with self._inference_slot():
-                request, result = service.anthropic_stream(
+                _, result = service.anthropic_stream(
                     body, conversation_id=self._conversation_hint(body),
                     client_key_id=identity.client_key_id, armor_level=level)
-                self._deliver_stream(result, anthropic=True, request=request)
+                self._deliver_stream(result, anthropic=True)
             return
         with self._inference_slot():
             request, result = service.anthropic_chat(
@@ -243,7 +240,7 @@ class InferenceRoutes:
         body = to_anthropic_message(result.response, request) if anthropic else result.response
         self._writer().json(200, body, headers=headers)
 
-    def _deliver_stream(self, result, *, anthropic: bool, request=None) -> None:
+    def _deliver_stream(self, result, *, anthropic: bool) -> None:
         report = result.report_fn()
         headers = {
             "X-Armor-Verdict": report.get("verdict", "stream"),
@@ -253,16 +250,10 @@ class InferenceRoutes:
         }
         writer = self._writer()
         writer.sse_start(headers=headers)
-        sent_done = False
         try:
-            chunks = (iter_anthropic_events(
-                result.iterator, fallback_model=getattr(request, "model", "unknown"))
-                if anthropic else result.iterator)
-            for chunk in chunks:
-                if not anthropic and b"[DONE]" in chunk:
-                    sent_done = True
-                writer.sse_chunk(chunk)
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            for chunk in result.iterator:
+                writer.sse_chunk(openai_event_to_anthropic(chunk) if anthropic else chunk)
+        except (BrokenPipeError, ConnectionResetError):
             # The client hung up mid-stream. Closing our generator lets the
             # pipeline abort the upstream socket, which is what stops the spend.
             _close_iterator(result.iterator)
@@ -270,26 +261,13 @@ class InferenceRoutes:
         except ProxyError as exc:
             # The status line is already out; an in-band error event is the only
             # honest signal left.
-            if anthropic:
-                payload = json.dumps({
-                    "type": "error",
-                    "error": {"type": exc.kind.value, "message": exc.message},
-                }, ensure_ascii=False).encode("utf-8")
-                writer.sse_chunk(b"event: error\ndata: " + payload + b"\n\n")
-            else:
-                payload = json.dumps(
-                    {"error": {"kind": exc.kind.value, "message": exc.message}},
-                    ensure_ascii=False).encode("utf-8")
-                writer.sse_chunk(b"event: error\ndata: " + payload + b"\n\n")
+            payload = json.dumps(
+                {"error": {"kind": exc.kind.value, "message": exc.message}},
+                ensure_ascii=False).encode("utf-8")
+            writer.sse_chunk(b"event: error\ndata: " + payload + b"\n\n")
         finally:
             _close_iterator(result.iterator)
-            # Exactly one terminator. Upstream usually sends its own; adding a
-            # second unconditionally made every completion end with two, which a
-            # client that counts them reports as a broken stream. Only supply one
-            # when the upstream did not.
-            if not anthropic and not sent_done:
-                writer.sse_chunk(b"data: [DONE]\n\n")
-            writer.sse_end()
+            writer.sse_chunk(b"data: [DONE]\n\n")
 
 
 class SessionRoutes:
@@ -477,44 +455,53 @@ def to_anthropic_message(response: dict, request=None) -> dict:
     choice = (response.get("choices") or [{}])[0] or {}
     message = choice.get("message") or {}
     usage = response.get("usage") or {}
-    content = []
-    response_content = message.get("content")
-    if isinstance(response_content, str) and response_content:
-        content.append({"type": "text", "text": response_content})
-    elif isinstance(response_content, list):
-        for block in response_content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                content.append({"type": "text", "text": str(block.get("text", ""))})
-    for index, call in enumerate(message.get("tool_calls") or []):
-        if not isinstance(call, dict):
-            continue
-        function = call.get("function") or {}
-        raw_input = function.get("arguments", "{}")
-        try:
-            tool_input = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
-        except (ValueError, TypeError):
-            tool_input = {"_raw": str(raw_input)}
-        if not isinstance(tool_input, dict):
-            tool_input = {"value": tool_input}
-        content.append({
-            "type": "tool_use",
-            "id": str(call.get("id") or f"toolu_popo_{index}"),
-            "name": str(function.get("name") or ""),
-            "input": tool_input,
-        })
     return {
         "id": response.get("id") or "msg_popo",
         "type": "message",
         "role": "assistant",
         "model": response.get("model") or getattr(request, "model", "unknown"),
-        "content": content,
-        "stop_reason": _ANTHROPIC_STOP.get(
-            choice.get("finish_reason"),
-            "tool_use" if message.get("tool_calls") else "end_turn"),
+        "content": [{"type": "text", "text": message.get("content") or ""}],
+        "stop_reason": _ANTHROPIC_STOP.get(choice.get("finish_reason"), "end_turn"),
         "stop_sequence": None,
         "usage": {"input_tokens": int(usage.get("prompt_tokens") or 0),
                   "output_tokens": int(usage.get("completion_tokens") or 0)},
     }
+
+
+def openai_event_to_anthropic(chunk: bytes) -> bytes:
+    """Translate one OpenAI SSE chunk into Anthropic content_block_delta events.
+
+    Non-data lines and the ``[DONE]`` sentinel pass through untouched: corrupting
+    the terminator would leave Anthropic clients waiting forever.
+    """
+    text = chunk.decode("utf-8", "replace")
+    output: list[str] = []
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if not stripped.startswith("data:"):
+            output.append(line)
+            continue
+        payload = stripped[5:].strip()
+        if payload in ("", "[DONE]"):
+            output.append(line)
+            continue
+        try:
+            obj = json.loads(payload)
+        except ValueError:
+            output.append(line)
+            continue
+        delta = ((obj.get("choices") or [{}])[0] or {}).get("delta") or {}
+        content = delta.get("content")
+        if content is None:
+            continue
+        event = {"type": "content_block_delta", "index": 0,
+                 "delta": {"type": "text_delta", "text": content}}
+        output.append("event: content_block_delta\ndata: "
+                      + json.dumps(event, ensure_ascii=False) + "\n\n")
+    return "".join(output).encode("utf-8")
+
+
+
 
 def _model_of(response: dict) -> str:
     """The model the upstream actually reported, not what was requested."""

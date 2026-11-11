@@ -26,12 +26,6 @@ ENV_ALIASES: dict[str, tuple[tuple[str, ...], object]] = {
     "retry_max": (("POPO_RETRY_MAX",), 8),
     "retry_on_refusal": (("POPO_RETRY_ON_REFUSAL", "ARMOR_RETRY_REFUSAL"), True),
     "retry_budget_seconds": (("POPO_RETRY_BUDGET_S",), 150),
-    # Ceiling for the output-budget escalation used when a reasoning model spends
-    # the whole budget thinking and returns empty content. 0 = no ceiling: give
-    # thinking as much room as it needs. Rounds are bounded separately so the
-    # loop always terminates.
-    "token_escalation": (("POPO_TOKEN_ESCALATION",), 0),
-    "token_escalation_rounds": (("POPO_TOKEN_ESCALATION_ROUNDS",), 4),
     "scrub_enabled": (("POPO_SCRUB",), True),
     "ephemeral": (("POPO_EPHEMERAL", "ARMOR_EPHEMERAL"), False),
     "data_dir": (("POPO_DATA_DIR", "ARMOR_DATA_DIR"), "data"),
@@ -46,7 +40,7 @@ ENV_ALIASES: dict[str, tuple[tuple[str, ...], object]] = {
     "concurrency_wait_seconds": (("POPO_CONCURRENCY_WAIT_S",), 10),
     # V1-compatible context controls. Compression is loss-averse and enabled;
     # lossy history folding is opt-in.
-    "compress_enabled": (("POPO_COMPRESS", "ARMOR_COMPRESS"), False),
+    "compress_enabled": (("POPO_COMPRESS", "ARMOR_COMPRESS"), True),
     "fold_enabled": (("POPO_FOLD", "ARMOR_FOLD"), False),
     "compress_at_chars": (("POPO_COMPRESS_AT", "ARMOR_COMPRESS_AT"), 55000),
     "compress_target_chars": (("POPO_COMPRESS_TARGET", "ARMOR_COMPRESS_TARGET"), 30000),
@@ -78,7 +72,7 @@ _BOOL_FIELDS = {"armor_enabled", "scrub_enabled", "ephemeral", "require_client_k
                 "fold_enabled", "state_ledger", "archive_enabled", "artifact_enabled",
                 "capture_responses", "capture_full", "scrub_prose"}
 _INT_FIELDS = {"bind_port", "retry_max", "max_body_bytes", "max_concurrency",
-               "stateq_max_messages", "token_escalation", "token_escalation_rounds",
+               "stateq_max_messages",
                "stateq_compress_threshold", "login_max_attempts", "login_window_seconds",
                "compress_at_chars", "compress_target_chars", "safe_trim",
                "fold_at_messages", "fold_keep_turns", "advertised_context"}
@@ -129,7 +123,7 @@ INVERTED_ALIASES: dict[str, tuple[str, ...]] = {
 class Config:
     """Runtime configuration for one proxy process."""
 
-    version = "2.7.19"
+    version = "2.7.13"
 
     __slots__ = tuple(dict.fromkeys(
         list(ENV_ALIASES) + ["upstream_key", "upstream_keys", "published_models",
@@ -157,8 +151,6 @@ class Config:
         self.bind_port = int(self.bind_port)
         self.max_body_bytes = int(self.max_body_bytes)
         self.retry_max = max(0, int(self.retry_max))
-        self.token_escalation = max(0, int(self.token_escalation))
-        self.token_escalation_rounds = max(0, int(self.token_escalation_rounds))
         self.compress_at_chars = max(0, int(self.compress_at_chars))
         self.compress_target_chars = max(2000, int(self.compress_target_chars))
         self.safe_trim = max(0, int(self.safe_trim))

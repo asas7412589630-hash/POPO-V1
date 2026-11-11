@@ -56,16 +56,28 @@ class ConsoleAssetTests(unittest.TestCase):
     def test_translatable_nodes_declared(self):
         self.assertGreaterEqual(len(re.findall(r'data-i18n', self.html)), 1)
 
-    def test_setup_explains_per_model_armour_choice(self):
-        """2.5.4 ships the per-model dropdown labelled "自動（依模型）"."""
+    def test_setup_explains_automatic_model_fingerprint_routing(self):
         app = (CONSOLE / "app.js").read_text(encoding="utf-8")
-        self.assertIn("自動（依模型）", app)
+        # The supplied 2.7.9 console now describes the shared V1 family block.
+        # Assert the stable UI anchors instead of an older explanatory sentence.
+        self.assertIn('id="modelList"', self.html)
+        self.assertIn("V1 Cinder", self.html)
+        self.assertIn("select.className = 'armor-select'", app)
+        self.assertIn("自動（依模型指紋）", app)
 
-    def test_setup_quick_posts_models_and_profiles(self):
-        """The quick-setup call carries both the published models and their armour."""
+    def test_setup_update_posts_the_selected_profiles(self):
         app = (CONSOLE / "app.js").read_text(encoding="utf-8")
-        self.assertRegex(app, r"api\('POST',\s*'/setup/quick',\s*\{[^}]*models:\s*published")
-        self.assertRegex(app, r"api\('POST',\s*'/setup/quick',\s*\{[^}]*profiles:\s*armor")
+        self.assertRegex(app, r"api\('POST',\s*'/setup/models',\s*\{\s*models:\s*published,\s*profiles\s*\}\)")
+
+    def test_model_block_picker_uses_server_family_choices(self):
+        app = (CONSOLE / "app.js").read_text(encoding="utf-8")
+        self.assertIn("state.armorFamilies = data.families || data.profiles || []", app)
+        self.assertRegex(app, r"profiles\[m\]\s*=\s*chosen")
+
+    def test_public_key_url_never_falls_back_to_console_origin(self):
+        app = (CONSOLE / "app.js").read_text(encoding="utf-8")
+        self.assertNotRegex(app, r"\|\|\s*state\.base\s*\+\s*['\"]/v1")
+        self.assertIn("尚無可用的此範圍網址", app)
 
 
 if __name__ == "__main__":

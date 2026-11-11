@@ -56,7 +56,10 @@ def _shrink_json(text: str, target: int) -> str | None:
 
 def compress(messages: list[dict[str, Any]], *, threshold: int = 55000,
              target: int = 30000, safe_trim: int = 900,
-             system_max: int = COMPRESS_SYSTEM_MAX) -> tuple[list[dict[str, Any]], dict]:
+             system_max: int = COMPRESS_SYSTEM_MAX,
+             protected_prefix_chars: int = 0,
+             protected_suffix_chars: int = 0,
+             protect_last_system: bool = False) -> tuple[list[dict[str, Any]], dict]:
     """Deterministically shrink duplicate and oversized older tool results."""
     result = [dict(message) for message in messages]
     info = {"before": _size(result), "after": 0, "trimmed": 0, "deduped": 0,
@@ -99,22 +102,54 @@ def compress(messages: list[dict[str, Any]], *, threshold: int = 55000,
             result[index] = _with_text(result[index], shrunk)
             info["trimmed"] += 1
 
-    # V1's last-resort system prompt handling keeps the beginning (identity and
-    # rules) and end (format requirements), where trimming tool results alone
-    # cannot bring the request under its compression target.
+    # V1's armor is opaque and must remain byte-for-byte intact. When the
+    # pipeline supplies its character span, trim only the client note between
+    # the protected policy message and final system-level precedence message.
     if _size(result) > target and system_max > 0:
+        system_indexes = [i for i, message in enumerate(result)
+                          if message.get("role") == "system"]
+        last_system_index = system_indexes[-1] if system_indexes else -1
         for index, message in enumerate(result):
             if message.get("role") != "system":
                 continue
-            content = _text(message)
-            if len(content) <= system_max:
+            if protect_last_system and index == last_system_index:
                 continue
-            head = int(system_max * 0.62)
-            tail = int(system_max * 0.30)
-            omitted = len(content) - head - tail
-            shortened = (content[:head]
-                         + f"\n\n… [{omitted} chars of the system prompt omitted to fit context.] …\n\n"
-                         + content[-tail:])
+            content = _text(message)
+            if index == 0 and protected_prefix_chars > 0:
+                prefix_len = min(len(content), max(0, int(protected_prefix_chars)))
+                suffix_len = min(max(0, int(protected_suffix_chars)),
+                                 max(0, len(content) - prefix_len))
+                middle_end = len(content) - suffix_len if suffix_len else len(content)
+                middle = content[prefix_len:middle_end]
+                marker = "\n\n… [client system note shortened to fit context.] …\n\n"
+                protected_len = prefix_len + suffix_len
+                limit = max(system_max, protected_len + len(marker) + 1024)
+                if len(content) <= limit:
+                    continue
+                keep = max(0, limit - protected_len - len(marker))
+                head = int(keep * 0.62)
+                tail = keep - head
+                if len(middle) <= keep:
+                    continue
+                marker = (f"\n\n… [{len(middle) - keep} chars of client system note omitted to fit context.] …\n\n")
+                # Account for the marker's actual length so the preserved
+                # policy and finalizer never push the result past the limit.
+                keep = max(0, limit - protected_len - len(marker))
+                head = int(keep * 0.62)
+                tail = keep - head
+                marker = (f"\n\n… [{len(middle) - keep} chars of client system note omitted to fit context.] …\n\n")
+                shortened = (content[:prefix_len] + middle[:head] + marker
+                             + (middle[-tail:] if tail else "")
+                             + (content[middle_end:] if suffix_len else ""))
+            else:
+                if len(content) <= system_max:
+                    continue
+                head = int(system_max * 0.62)
+                tail = int(system_max * 0.30)
+                omitted = len(content) - head - tail
+                shortened = (content[:head]
+                             + f"\n\n… [{omitted} chars of the system prompt omitted to fit context.] …\n\n"
+                             + content[-tail:])
             result[index] = _with_text(message, shortened)
             info["system_trimmed"] += 1
             if _size(result) <= target:

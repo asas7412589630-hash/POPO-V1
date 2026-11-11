@@ -125,11 +125,18 @@ class TestPipelineContext(unittest.TestCase):
 
         records = MagicMock()
         records.get_handoff.return_value = {}
-        run_pipeline(self.req, cfg, source_picker=Picker(), records=records,
-                     conversation_id="profile-test")
-        system = source.payloads[0]["messages"][0]["content"]
-        self.assertIn("<policy runtime=", system)
-        self.assertNotIn("Cinder", system)
+        result = run_pipeline(self.req, cfg, source_picker=Picker(), records=records,
+                              conversation_id="profile-test")
+        sent_messages = source.payloads[0]["messages"]
+        system = sent_messages[0]["content"]
+        self.assertGreater(len(system), result.policy_len)
+        self.assertEqual(sent_messages[0]["role"], "system")
+        self.assertEqual(sum(m.get("role") == "system" for m in sent_messages), 1)
+        self.assertIn("base", system)
+        self.assertNotIn("name", source.payloads[0]["messages"][0])
+        self.assertFalse(any(str(message.get("name", "")).startswith("_popo_armor")
+                             for message in source.payloads[0]["messages"]))
+        self.assertEqual(result.armor_blocks, ["cinder_nodebt", "contract"])
 
     def test_off_profile_really_sends_no_injected_system(self):
         cfg = Config(upstream_host="http://test", upstream_key="fake-key",

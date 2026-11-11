@@ -19,14 +19,26 @@ let state = {
   upstreamKey: '',
   upstreamPrefix: '',
   key: '',
+  keyScope: 'public',
+  configured: false,
   published: [],
   available: [],
   sourceModels: [],
 };
 let sourceRowsCache = [];
+const ACCESS_VIEW = { apiBase: '', public: false, publicBase: '', internalBase: '' };
+
+function clientBaseForScope(scope) {
+  return scope === 'public' ? ACCESS_VIEW.publicBase : ACCESS_VIEW.internalBase;
+}
 
 function loadState() {
   try { state = Object.assign(state, JSON.parse(localStorage.getItem(LS) || '{}')); } catch {}
+  // Credentials belong to the current tab only. Older releases persisted both
+  // upstream and client keys in localStorage, so remove them during migration.
+  delete state.upstreamKey;
+  delete state.key;
+  delete state.adminKey;
   // A stored selection is only meaningful against the catalogue it came from.
   // Clearing it here keeps the counter honest before any request is made.
   const known = new Set(state.available || []);
@@ -34,8 +46,15 @@ function loadState() {
   for (const m of Object.keys(state.armor || {})) {
     if (!known.has(m)) delete state.armor[m];
   }
+  saveState();
 }
-function saveState() { localStorage.setItem(LS, JSON.stringify(state)); }
+function saveState() {
+  const safe = { ...state };
+  delete safe.upstreamKey;
+  delete safe.key;
+  delete safe.adminKey;
+  localStorage.setItem(LS, JSON.stringify(safe));
+}
 
 function readBody(r) {
   const ct = r.headers.get('Content-Type') || '';
@@ -51,7 +70,8 @@ async function api(method, path, body) {
   else if (state.key) headers['Authorization'] = 'Bearer ' + state.key;
   if (body) headers['Content-Type'] = 'application/json';
   try {
-    const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined,
+      credentials: 'same-origin' });
     const data = await readBody(res);
     return { ok: res.ok, status: res.status, data };
   } catch (error) {
@@ -83,19 +103,20 @@ function clearMsg() {
 }
 
 function showTab(name) {
-  // Result and armor were separate V1-style tabs. Keep their deep links and
-  // existing call sites working while presenting six concise V1-like sections.
+  // Result and armor were separate V1-style tabs; keep their deep links mapped
+  // into the simpler setup and tuning views.
   if (name === 'result' || name === 'armor') name = name === 'result' ? 'setup' : 'tuning';
-  $$('.step').forEach(s => s.classList.toggle('on', s.id === 'tab-' + name));
+  $$('.step').forEach(s => s.classList.toggle('on',
+    s.id === 'tab-' + name || (name === 'sources' && s.id === 'panel-sources')));
   $$('.tabs button').forEach(b => {
-    const active = b.dataset.tab === name;
+    const active = b.dataset.tab === name || (name === 'sources' && b.dataset.tab === 'manage');
     b.classList.toggle('on', active);
     b.setAttribute('aria-selected', String(active));
   });
-  if (['sources', 'keys', 'records', 'tuning'].includes(name)) $('#operatorAccess')?.setAttribute('open', '');
   if (name === 'sources') loadSources();
-  if (name === 'keys') { loadKeys(); loadAccounts(); }
-  if (name === 'records') loadConversations();
+  if (name === 'manage') { loadKeys(); loadAccounts(); loadAccess(); }
+  if (name === 'records') loadTraceClients();
+  if (name === 'tuning') loadTuning();
 }
 
 function renderModels() {
@@ -112,12 +133,13 @@ function renderModels() {
 
   // Armour choices come from the server, not from a list written here: the registry
   // is the source of truth and an operator may edit it without touching this file.
-  const armorNames = (state.armorFamilies && state.armorFamilies.length)
-    ? state.armorFamilies
-    : ['default'];
+  const armorFamilies = (state.armorFamilies && state.armorFamilies.length)
+    ? state.armorFamilies : [];
+  const armorNames = armorFamilies.map(f => typeof f === 'string' ? f : f.id);
   const armorLabel = (name) => {
     const d = (state.armorDetails || {})[name];
-    return (d && d.label) || name;
+    const family = armorFamilies.find(f => (typeof f === 'string' ? f : f.id) === name);
+    return (family && typeof family === 'object' && family.label) || (d && d.label) || name;
   };
 
   state.available.forEach((m, i) => {
@@ -143,11 +165,15 @@ function renderModels() {
     const select = document.createElement('select');
     select.className = 'armor-select';
     select.dataset.model = m;
-    ['default'].concat(armorNames).forEach(name => {
-      if (name === 'default' && armorNames.indexOf('default') !== -1) return;
+    [''].concat(armorNames).forEach(name => {
       const opt = document.createElement('option');
-      opt.value = name === 'default' ? '' : name;
-      opt.textContent = name === 'default' ? '自動（依模型）' : armorLabel(name);
+      opt.value = name;
+      opt.textContent = name ? armorLabel(name) : '自動（依模型指紋）';
+      if (name) {
+        const family = armorFamilies.find(f => (typeof f === 'string' ? f : f.id) === name);
+        const detail = (family && family.desc) || (state.armorDetails[name] || {}).desc;
+        if (detail) opt.title = detail;
+      }
       select.appendChild(opt);
     });
     const current = (state.armor && state.armor[m]) || '';
@@ -190,6 +216,8 @@ function updateSelectedCount() {
   state.published = list
     ? Array.from(list.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value)
     : [];
+  const setup = $('#btnSetup');
+  if (setup) setup.disabled = ticked === 0;
 }
 
 async function loadArmorFamilies() {
@@ -205,20 +233,24 @@ function fillForm() {
   $('#upstreamHost').value = state.upstreamHost || '';
   $('#upstreamKey').value = state.upstreamKey || '';
   $('#upstreamPrefix').value = state.upstreamPrefix || '';
-  if (state.key) {
-    $('#outUrl').textContent = state.base + '/v1';
-    $('#outKey').textContent = state.key;
+  if (state.configured || state.key) {
+    const keyScope = state.keyScope || 'public';
+    $('#outUrl').textContent = clientBaseForScope(keyScope) || '尚無可用的此範圍網址';
+    $('#outUrlHint').textContent = keyScope === 'public'
+      ? (ACCESS_VIEW.public ? '對外金鑰；公開網址已驗證，可跨網路使用。' : '對外網址尚未驗證；請先啟動公開隧道。')
+      : '對內金鑰；只允許本機或內網呼叫。';
+    $('#outKey').textContent = state.key || '金鑰只在建立時顯示；可到「管理」建立新金鑰';
     $('#outModels').textContent = state.published.join(', ') || '-';
+    $('#btnCopyClientConfig').disabled = !state.key || !clientBaseForScope(keyScope)
+      || (keyScope === 'public' && !ACCESS_VIEW.public);
+    $('#btnCopyClientConfig').title = keyScope === 'public' && !ACCESS_VIEW.public
+      ? '尚無已驗證的公開網址'
+      : (!state.key ? '目前沒有一次性顯示的客戶端金鑰' : '');
     $('#tab-result').classList.add('open');
   } else {
     $('#tab-result').classList.remove('open');
   }
   renderModels();
-  const sel = $('#armorModel');
-  sel.replaceChildren();
-  (state.available.length ? state.available : ['glm-5.3']).forEach(m => {
-    const option = document.createElement('option'); option.value = m; option.textContent = m; sel.appendChild(option);
-  });
 }
 
 async function refreshStatus() {
@@ -231,11 +263,20 @@ async function refreshStatus() {
     ? (data.configured ? '服務在線 · 已完成初始設定' : '服務在線 · 尚未完成初始設定')
     : (result.status === 0 ? '無法連線到本機 POPO 服務。' : `服務在線，狀態檢查回應 HTTP ${result.status}。`);
   if (ok && data.configured) {
+    state.configured = true;
     state.base = normalizeBase(location.origin);
+    state.upstreamHost = data.upstream_host || state.upstreamHost;
     state.available = data.models || [];
     state.published = data.published || [];
+    state.armor = data.profiles || state.armor || {};
+    $('#btnSetup').textContent = '套用模型與積木';
+    fillForm();
+    await loadAccess();
     saveState();
     renderModels();
+  } else if (ok) {
+    state.configured = false;
+    $('#btnSetup').textContent = '驗證上游並建立 API';
   }
 }
 
@@ -244,15 +285,14 @@ async function loadModelList() {
   const host = normalizeBase($('#upstreamHost').value);
   if (!host) return showMsg('請先填寫 Base URL', false);
   const key = $('#upstreamKey').value.trim();
-  $('#btnTest').disabled = true;
-  showMsg(key ? '讀取模型清單（含金鑰驗證）...' : '讀取模型清單（不需金鑰）...', true);
+  if (!key) return showMsg('請填寫上游 API Key', false);
+  showMsg('連線並讀取模型清單...', true);
   const { ok, data } = await api('POST', '/setup/list-models', {
     upstream_host: host,
     upstream_key: key,
     upstream_path_prefix: $('#upstreamPrefix').value.trim(),
     setup_token: $('#setupToken').value.trim(),
   });
-  $('#btnTest').disabled = false;
   if (!ok) {
     const detail = data?.error?.detail || data?.error?.message || JSON.stringify(data);
     return showMsg('讀取失敗：' + detail, false);
@@ -273,78 +313,45 @@ async function loadModelList() {
   }
   saveState();
   renderModels();
-  const auth = data.authenticated ? '（已帶金鑰）' : '（未帶金鑰）';
-  showMsg(`讀到 ${state.available.length} 個模型${auth}。勾選要發布的，並選擇每個模型的破甲。`, true);
-}
-
-async function verifyKey() {
-  clearMsg();
-  const host = normalizeBase($('#upstreamHost').value);
-  const key = $('#upstreamKey').value.trim();
-  if (!host || !key) return showMsg('請填寫 Base URL 與 API Key', false);
-  $('#btnVerify').disabled = true;
-  showMsg('驗證金鑰（不消耗 token）...', true);
-  const { ok, data } = await api('POST', '/setup/verify-key', {
-    upstream_host: host,
-    upstream_key: key,
-    upstream_path_prefix: $('#upstreamPrefix').value.trim(),
-    setup_token: $('#setupToken').value.trim(),
-  });
-  $('#btnVerify').disabled = false;
-  if (!ok) {
-    const detail = data?.error?.detail || data?.error?.message || JSON.stringify(data);
-    return showMsg('驗證失敗：' + detail, false);
-  }
-  const verdict = data.verdict || 'unknown';
-  const bad = verdict === 'rejected' || verdict === 'unreachable';
-  showMsg(`金鑰：${data.message || verdict}`, !bad);
-}
-
-async function testConnection() {
-  clearMsg();
-  const host = normalizeBase($('#upstreamHost').value);
-  const key = $('#upstreamKey').value.trim();
-  if (!host || !key) return showMsg('請填寫 Base URL 與 API Key', false);
-  const published = Array.from($$('#modelList input:checked')).map(i => i.value);
-  if (!published.length) return showMsg('請先勾選至少一個模型', false);
-  $('#btnTest').disabled = true;
-  showMsg('測試對話（會消耗少量 token）...', true);
-  const { ok, data } = await api('POST', '/setup/test', {
-    upstream_host: host,
-    upstream_key: key,
-    upstream_path_prefix: $('#upstreamPrefix').value.trim(),
-    model: published[0],
-    setup_token: $('#setupToken').value.trim(),
-  });
-  $('#btnTest').disabled = false;
-  if (!ok) {
-    const detail = data?.error?.detail || data?.error?.message || JSON.stringify(data);
-    return showMsg('對話測試失敗：' + detail, false);
-  }
-  showMsg(`對話可用，實際使用模型：${data.model}`, true);
+  showMsg(`讀到 ${state.available.length} 個模型。勾選要發布的，並選擇每個模型的積木。`, true);
 }
 
 async function doSetup() {
   clearMsg();
   const host = normalizeBase($('#upstreamHost').value);
   const key = $('#upstreamKey').value.trim();
-  if (!host || !key) return showMsg('請填寫 Base URL 與 API Key', false);
   const published = Array.from($$('#modelList input:checked')).map(i => i.value);
-  $('#btnSetup').disabled = true;
-  showMsg('驗證並建立金鑰...', true);
-  // Per-model armour, filtered to the models actually being published: sending
-  // assignments for models that were not selected would be rejected as unknown.
-  const armor = {};
+  if (!published.length) return showMsg('請先讀取模型並勾選至少一個模型', false);
+  const profiles = {};
   for (const m of published) {
     const chosen = (state.armor || {})[m];
-    if (chosen) armor[m] = chosen;
+    if (chosen) profiles[m] = chosen;
   }
+  $('#btnSetup').disabled = true;
+  if (!host || !key) {
+    if (!state.configured) {
+      $('#btnSetup').disabled = false;
+      return showMsg('首次設定請填 Base URL 與上游 API Key', false);
+    }
+    showMsg('儲存模型與積木設定...', true);
+    const updated = await api('POST', '/setup/models', { models: published, profiles });
+    $('#btnSetup').disabled = false;
+    if (!updated.ok) return showMsg('套用失敗：' + (updated.data?.error?.message || '請確認管理權限'), false);
+    state.published = updated.data.published || published;
+    state.armor = updated.data.profiles || profiles;
+    saveState(); fillForm();
+    $('#outModels').textContent = state.published.join(', ') || '-';
+    showMsg('模型與積木設定已更新', true);
+    return;
+  }
+  showMsg('連線驗證並套用設定...', true);
   const { ok, data } = await api('POST', '/setup/quick', {
     upstream_host: host,
     upstream_key: key,
     upstream_path_prefix: $('#upstreamPrefix').value.trim(),
     models: published,
-    profiles: armor,
+    profiles,
+    key_scope: $('#setupKeyScope').value,
     setup_token: $('#setupToken').value.trim(),
   });
   $('#btnSetup').disabled = false;
@@ -353,37 +360,22 @@ async function doSetup() {
     return showMsg('失敗：' + detail, false);
   }
   state.base = normalizeBase(location.origin);
-  state.key = data.key;
+  state.key = data.key || state.key || '';
+  state.keyScope = data.allow_public ? 'public' : 'internal';
+  state.keyId = data.key_id || state.keyId || '';
   state.published = data.published || [];
   state.available = data.models || [];
+  state.armor = data.profiles || profiles;
+  state.configured = true;
   state.upstreamHost = host;
   state.upstreamKey = key;
+  await loadAccess();
   saveState();
   fillForm();
   $('#tab-result').classList.add('open');
   showTab('setup');
   $('#tab-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  showMsg('破甲 API 已建立', true);
-}
-
-async function publishModels() {
-  const published = Array.from($$('#modelList input:checked')).map(i => i.value);
-  state.published = published;
-  saveState();
-  const { ok, data } = await api('POST', '/setup/models', { models: published });
-  if (!ok) return showMsg('發布模型失敗：' + (data?.error?.detail || ''), false);
-  $('#outModels').textContent = state.published.join(', ') || '-';
-}
-
-async function previewArmor() {
-  const model = $('#armorModel').value;
-  const level = $('#armorLevel').value;
-  // If no triad key yet, /armor is public (no auth required).
-  const headers = state.key ? { 'Authorization': 'Bearer ' + state.key } : {};
-  const res = await fetch(state.base + `/armor?model=${encodeURIComponent(model)}&level=${encodeURIComponent(level)}`, { headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) return showMsg('預覽失敗：' + (data?.error?.detail || ''), false);
-  $('#armorPreview').textContent = `profile: ${data.profile}\nblocks: ${data.blocks?.join(', ') || '-'}\npolicy_len: ${data.policy_len}\n\n${data.content}`;
+  showMsg(data.key ? '設定已套用，API 金鑰已建立' : '設定已更新，沿用現有 API 金鑰', true);
 }
 
 function copyTo(id) {
@@ -403,22 +395,19 @@ function bind() {
     const button = e.target.closest('button[data-tab]');
     if (button) showTab(button.dataset.tab);
   };
-  // Three separate actions on purpose: listing the catalogue and judging the key
-  // are cheap and independent, and only the chat probe spends tokens.
   const listBtn = $('#btnList');
   if (listBtn) listBtn.onclick = loadModelList;
-  const verifyBtn = $('#btnVerify');
-  if (verifyBtn) verifyBtn.onclick = verifyKey;
-  if ($('#btnTest')) $('#btnTest').onclick = testConnection;
   $('#btnSetup').onclick = doSetup;
-  $('#btnPreview').onclick = previewArmor;
-  $('#btnAdminProfile').onclick = async () => {
-    const model=$('#armorModel').value, level=$('#armorLevel').value;
-    const r=await api('GET',`/admin/profile?model=${encodeURIComponent(model)}&level=${encodeURIComponent(level)}`);
-    if(adminReady(r))pretty('#adminProfileData',r.data);
+  $('#btnCopyClientConfig').onclick = () => {
+    if (!state.key) return showMsg('此頁沒有可複製的金鑰；請到「管理」建立新客戶端金鑰。', false);
+    const scope = state.keyScope || 'public';
+    const base = clientBaseForScope(scope);
+    if (!base || (scope === 'public' && !ACCESS_VIEW.public)) return showMsg('公開網址目前沒有通過連線檢查。', false);
+    copyText(`Base URL: ${base}\nAPI Key: ${state.key}`, scope === 'public' ? '已複製公開網址與客戶端金鑰' : '已複製內網網址與客戶端金鑰');
   };
   $$('.copy').forEach(b => b.onclick = () => copyTo(b.dataset.target));
-  $('#btnRegen').onclick = doSetup;
+  $('#btnOpenSources').onclick = () => showTab('sources');
+  $('#btnSourcesBack').onclick = () => showTab('manage');
 }
 
 bind();
@@ -450,7 +439,23 @@ function fillSource(id) {
   $('#sourceSecret').value = '';
 }
 async function sourceAction(action, extra={}) {
-  const result = await api('POST', '/admin/sources', {action, source_id:selectedSource(), ...extra});
+  let path = '/admin/sources';
+  let body;
+  const sourceId = selectedSource();
+  if (action === 'save') {
+    body = { action: 'add', id: $('#sourceId').value.trim(),
+      name: $('#sourceName').value.trim(), base_url: $('#sourceUrl').value.trim() };
+    const secret = $('#sourceSecret').value.trim();
+    if (secret) body.keys = [secret];
+  } else if (action === 'delete') {
+    body = { action: 'remove', id: sourceId };
+  } else if (action === 'discover' || action === 'test') {
+    path += '/' + action;
+    body = { source_id: sourceId, ...extra };
+  } else {
+    body = { action, source_id: sourceId, ...extra };
+  }
+  const result = await api('POST', path, body);
   if (!adminReady(result)) return null;
   showMsg(`${action} 完成`, true); return result.data;
 }
@@ -475,7 +480,7 @@ function renderManagementRows(target, rows, kind) {
     const row=document.createElement('div'); row.className='model-item';
     const label=document.createElement('span'); label.style.flex='1';
     label.textContent = kind==='key'
-      ? `${rec.label || '未命名'} · ${rec.key_id} · ${rec.enabled?'啟用':'停用'}`
+      ? `${rec.label || '未命名'} · ${rec.key_id} · ${rec.allow_public?'對外':'對內'} · ${rec.enabled?'啟用':'停用'}`
       : `${rec.username} · ${rec.role} · ${rec.disabled?'停用':'啟用'} · ${rec.uid}`;
     row.appendChild(label);
     if (kind==='key' && rec.enabled && rec.key_id!=='admin') {
@@ -495,73 +500,272 @@ function renderManagementRows(target, rows, kind) {
 }
 async function loadKeys() { const r=await api('GET','/admin/keys'); if(adminReady(r))renderManagementRows('#keyList',r.data.keys||[],'key'); }
 async function loadAccounts() { const r=await api('GET','/admin/accounts'); if(adminReady(r))renderManagementRows('#accountList',r.data.accounts||[],'account'); }
-async function loadConversations() {
-  const r=await api('GET','/admin/conversations'); if(!adminReady(r))return;
-  const rows=r.data.conversations||[], select=$('#conversationSelect'); select.replaceChildren();
-  rows.forEach(item=>{const id=typeof item==='string'?item:(item.conversation_id||item.id); if(!id)return;const opt=document.createElement('option');opt.value=id;opt.textContent=id;select.appendChild(opt);});
-  pretty('#conversationData',rows);
+async function loadAccess() {
+  const url=$('#clientApiUrl'), status=$('#clientApiStatus');
+  if(!url||!status)return;
+  if(!state.base){ACCESS_VIEW.apiBase='';ACCESS_VIEW.public=false;ACCESS_VIEW.publicBase='';ACCESS_VIEW.internalBase='';url.textContent='尚未設定';status.textContent='完成上游設定後即可檢查 API 位址。';return;}
+  url.textContent='檢查中…';
+  const r=await api('GET','/access');
+  if(!r.ok){url.textContent='無法取得';status.textContent='位址檢查失敗（HTTP '+r.status+'）。';ACCESS_VIEW.apiBase='';ACCESS_VIEW.public=false;ACCESS_VIEW.publicBase='';ACCESS_VIEW.internalBase='';}
+  else {
+  const addresses=r.data.addresses||[];
+  const pub=addresses.find(a=>a.kind==='public'&&a.reachable);
+  const local=addresses.find(a=>a.kind==='loopback'&&a.reachable);
+  const lan=addresses.find(a=>a.kind==='lan'&&a.reachable);
+  ACCESS_VIEW.public=!!pub;
+  ACCESS_VIEW.publicBase=pub?.base_url||'';
+  ACCESS_VIEW.internalBase=(lan||local)?.base_url||'';
+  ACCESS_VIEW.apiBase=ACCESS_VIEW.publicBase||ACCESS_VIEW.internalBase;
+  url.textContent=ACCESS_VIEW.apiBase||'沒有可用位址';
+  status.textContent=pub
+    ? '公開隧道已驗證；其他網路與裝置可使用此網址，推論仍需客戶端金鑰。'
+    : (r.data.public_configured || r.data.configured_public_base
+      ? '公開網址目前無法連線；對內網址只能在本機或同一內網使用。'
+      : (lan ? '目前提供本機／區網網址；其他網路無法連線。' : '目前只有本機網址；其他裝置無法連線。'));
+  }
+  const resultUrl=$('#outUrl'), hint=$('#outUrlHint'), pair=$('#btnCopyClientConfig');
+  if(resultUrl&&state.configured){
+    const scope=state.keyScope||'public';
+    resultUrl.textContent=clientBaseForScope(scope)||'尚無可用的此範圍網址';
+    hint.textContent=scope==='public'
+      ? (ACCESS_VIEW.public?'對外金鑰；公開網址已驗證，可跨網路使用。':'此金鑰允許對外使用；公開網址尚未驗證。')
+      : '對內金鑰；只允許本機或內網呼叫。';
+    pair.disabled=!state.key||!clientBaseForScope(scope)||(scope==='public'&&!ACCESS_VIEW.public);
+    pair.title=scope==='public'&&!ACCESS_VIEW.public?'尚無已驗證的公開網址':(!state.key?'目前沒有一次性顯示的客戶端金鑰':'');
+  }
+}
+async function copyText(value, success) {
+  try { await navigator.clipboard.writeText(value); showMsg(success,true); }
+  catch { showMsg('無法存取剪貼簿，請選取網址或金鑰後複製。',false); }
+}
+function showCreatedKey(token, scope) {
+  const host=$('#newKeyResult'); host.replaceChildren(); host.style.display='block';
+  const title=document.createElement('strong'); title.textContent='客戶端金鑰已建立，只會顯示這一次';
+  const value=document.createElement('code'); value.className='key-token'; value.textContent=token;
+  const base=clientBaseForScope(scope);
+  const external=scope==='public';
+  const actions=document.createElement('div'); actions.className='action-row';
+  const copyKey=document.createElement('button'); copyKey.textContent='複製金鑰';
+  copyKey.onclick=()=>copyText(token,'已複製客戶端金鑰');
+  const copyPair=document.createElement('button'); copyPair.className='primary'; copyPair.textContent=external?'複製公開網址 + 金鑰':'複製內網網址 + 金鑰';
+  copyPair.disabled=!base||(external&&!ACCESS_VIEW.public);
+  copyPair.title=external&&!ACCESS_VIEW.public?'請先啟動並驗證公開隧道':'';
+  copyPair.onclick=()=>copyText(`Base URL: ${base}\nAPI Key: ${token}`,external?'已複製，可貼到其他網路的 API 客戶端':'已複製內網 API 設定');
+  actions.append(copyKey,copyPair);
+  const hint=document.createElement('small'); hint.className='field-hint';
+  hint.textContent=external&&!ACCESS_VIEW.public
+    ? '對外權限已設定，但公開網址尚未驗證；伺服器只保存金鑰雜湊，請立即複製金鑰。'
+    : `範圍：${external?'對外':'本機／內網'}。伺服器只保存金鑰雜湊；請立即複製，離開頁面後無法再次查看。`;
+  host.append(title,value,actions,hint);
+}
+const TRACE_VIEW = { client: '', conv: '', selected: '', days: 7 };
+function traceItem(title, meta, selected, onClick) {
+  const button=document.createElement('button'); button.type='button';
+  button.className='trace-item'+(selected?' sel':''); button.onclick=onClick;
+  const strong=document.createElement('strong'); strong.textContent=title || '(無標題)';
+  const small=document.createElement('small'); small.textContent=meta || '';
+  button.append(strong,small); return button;
+}
+function traceDays() { return Number($('#traceDays')?.value || TRACE_VIEW.days || 7); }
+async function loadTraceClients() {
+  TRACE_VIEW.days=traceDays();
+  const r=await api('GET',`/admin/trace/clients?days=${TRACE_VIEW.days}`);
+  if(!adminReady(r))return;
+  const host=$('#traceClients'); host.replaceChildren();
+  const rows=r.data.clients||[];
+  if(!rows.length){host.textContent='最近沒有回合紀錄。';return;}
+  rows.forEach(item=>host.appendChild(traceItem(item.client,
+    `${item.turns} 回合 · ${item.convs.length} 段對話 · ${item.last_when}`,
+    item.client===TRACE_VIEW.client,()=>selectTraceClient(item.client))));
+  $('#traceScope').textContent=`最近 ${TRACE_VIEW.days} 天 · ${rows.length} 個客戶端`;
+}
+async function selectTraceClient(client) {
+  TRACE_VIEW.client=client; TRACE_VIEW.conv=''; TRACE_VIEW.selected='';
+  $('#traceDetail').textContent='選擇回合以查看完整內容。';
+  await Promise.all([loadTraceClients(),loadTraceConversations(),loadTraceTurns()]);
+}
+async function loadTraceConversations() {
+  if(!TRACE_VIEW.client){$('#traceConversations').textContent='選擇客戶端';return;}
+  const r=await api('GET',`/admin/trace/conversations?days=${traceDays()}&client=${encodeURIComponent(TRACE_VIEW.client)}`);
+  if(!adminReady(r))return;
+  const host=$('#traceConversations'); host.replaceChildren();
+  const rows=r.data.conversations||[];
+  if(!rows.length){host.textContent='此客戶端沒有對話紀錄。';return;}
+  rows.forEach(item=>host.appendChild(traceItem(item.first_user||item.conv,
+    `${item.turns} 回合 · ${item.models.join(' / ')}${item.retries?` · 重試 ${item.retries}`:''} · ${item.last_when}`,
+    item.conv===TRACE_VIEW.conv,()=>selectTraceConversation(item.conv))));
+}
+async function selectTraceConversation(conv) {
+  TRACE_VIEW.conv=conv; TRACE_VIEW.selected='';
+  $('#traceDetail').textContent='選擇回合以查看完整內容。';
+  await Promise.all([loadTraceConversations(),loadTraceTurns()]);
+}
+async function loadTraceTurns() {
+  const host=$('#traceTurns');
+  const query=new URLSearchParams({days:String(traceDays()),limit:'60'});
+  if(TRACE_VIEW.client)query.set('client',TRACE_VIEW.client);
+  if(TRACE_VIEW.conv)query.set('conv',TRACE_VIEW.conv);
+  const r=await api('GET','/admin/trace/turns?'+query.toString()); if(!adminReady(r))return;
+  host.replaceChildren(); const rows=r.data.records||[];
+  if(!rows.length){host.textContent='沒有符合的回合。';return;}
+  rows.forEach(item=>{
+    const retries=Math.max(0,(item.attempt_count||0)-1);
+    const meta=`${item.model||'?'} · ${item.verdict||'—'} · ${item.final_chars||0} 字${retries?` · 重試 ${retries}`:''} · ${item.when||''}`;
+    host.appendChild(traceItem(`${item.when||''}　${item.user||'(無使用者文字)'}`,
+      meta,item.id===TRACE_VIEW.selected,()=>loadTraceTurn(item.id)));
+  });
+}
+function addTracePre(host,label,value) {
+  const heading=document.createElement('div'); heading.className='field-label'; heading.textContent=label;
+  const pre=document.createElement('pre'); pre.textContent=value || '(無文字)'; host.append(heading,pre);
+  return pre;
+}
+async function loadTraceTurn(id) {
+  TRACE_VIEW.selected=id; loadTraceTurns();
+  const r=await api('GET','/admin/trace/turns/'+encodeURIComponent(id)); if(!adminReady(r))return;
+  const rec=r.data.record||{}, host=$('#traceDetail'); host.replaceChildren();
+  const title=document.createElement('h3'); title.textContent=`${rec.when||''} · ${rec.model||'?'} · ${rec.verdict||'—'}`; host.appendChild(title);
+  const info=document.createElement('p');
+  info.className='hint';
+  info.textContent=`客戶端 ${rec.client||'?'} · 對話 ${rec.conv||'?'} · ${rec.msgs||0} 則訊息 · ${rec.elapsed||0}s · ${rec.attempts?.length||0} 次上游呼叫`;
+  host.appendChild(info);
+  const usage=[];
+  if(rec.prompt_tokens!=null)usage.push(`輸入 ${rec.prompt_tokens}${rec.cached_tokens?`（快取 ${rec.cached_tokens}）`:''}`);
+  if(rec.completion_tokens!=null)usage.push(`輸出 ${rec.completion_tokens}`);
+  if(rec.reasoning_tokens)usage.push(`思考 ${rec.reasoning_tokens}`);
+  if(rec.tool_calls)usage.push(`工具 ${rec.tool_calls} 次${rec.tool_names?.length?'：'+rec.tool_names.join(', '):''}`);
+  if(usage.length){const line=document.createElement('p');line.className='hint';line.textContent='用量：'+usage.join(' · ');host.appendChild(line);}
+  addTracePre(host,'使用者',rec.user);
+  if(rec.think)addTracePre(host,'模型思考',rec.think);
+  const attempts=rec.attempts||[];
+  if(attempts.length){
+    const heading=document.createElement('div');heading.className='field-label';heading.textContent='每次嘗試';host.appendChild(heading);
+    attempts.forEach(a=>{
+      const detail=document.createElement('details');detail.className='trace-attempt';
+      const summary=document.createElement('summary');
+      summary.textContent=`#${a.n} ${a.kind||'?'} · ${a.chars||0} 字 · HTTP ${a.status||'—'} · +${a.at||0}s${a.note?' · '+a.note:''}`;
+      const pre=document.createElement('pre');pre.textContent=a.text||'(無文字)';detail.append(summary,pre);host.appendChild(detail);
+    });
+  }
+  const finalPre=addTracePre(host,'最終回覆',rec.final);
+  if(rec.final){
+    const actions=document.createElement('div');actions.className='action-row';
+    const copy=document.createElement('button');copy.textContent='複製回覆';
+    copy.onclick=()=>navigator.clipboard.writeText(rec.final).then(()=>showMsg('已複製回覆',true)).catch(()=>showMsg('複製失敗',false));
+    const full=document.createElement('button');full.textContent='全螢幕閱讀';
+    full.onclick=()=>finalPre.requestFullscreen?.();
+    actions.append(copy,full);host.appendChild(actions);
+  }
+  if(rec.error){const err=document.createElement('p');err.className='hint';err.textContent='錯誤：'+rec.error;host.appendChild(err);}
+  if(rec.request){
+    const details=document.createElement('details');details.className='trace-attempt';
+    const summary=document.createElement('summary');summary.textContent='完整請求（包含工具定義）';
+    const pre=document.createElement('pre');pre.textContent=JSON.stringify(rec.request,null,2);details.append(summary,pre);host.appendChild(details);
+  }
 }
 async function loadUsage() { const r=await api('GET',`/admin/usage?days=${encodeURIComponent($('#usageDays').value||7)}`); if(adminReady(r))pretty('#usageData',r.data); }
 async function loadAudit() { const r=await api('GET',`/admin/audit?days=${encodeURIComponent($('#usageDays').value||7)}`); if(adminReady(r))pretty('#auditData',r.data); }
+async function loadRequestLogs() { const r=await api('GET','/admin/request-logs?limit=200'); if(adminReady(r))pretty('#requestLogData',r.data.entries||[]); }
 
 document.addEventListener('DOMContentLoaded', function () {
   $('#sourceSelect').onchange=()=>fillSource($('#sourceSelect').value);
-  $('#btnSourceSave').onclick=async()=>{const r=await sourceAction('save',{name:$('#sourceName').value,base_url:$('#sourceUrl').value,api_key:$('#sourceSecret').value}); if(r){$('#sourceSecret').value='';await loadSources();fillSource(r.id);}};
+  $('#btnSourceSave').onclick=async()=>{const r=await sourceAction('save'); if(r){$('#sourceSecret').value='';await loadSources();fillSource(r.source?.id||$('#sourceId').value.trim());}};
   $('#btnSourceRefresh').onclick=loadSources;
   $('#btnSourceDiscover').onclick=async()=>{const r=await sourceAction('discover');if(r)renderSourceModels(r.models);};
   $('#btnSourceTest').onclick=async()=>{const model=$('#sourceModelList input:checked')?.value||'';const r=await sourceAction('test',{model});if(r)pretty('#routeList',r);};
-  $('#btnSourcePublish').onclick=async()=>{const models=$$('#sourceModelList input:checked').map(cb=>cb.value);const profile=$('#sourceProfile').value;const profiles={};models.forEach(m=>{if(profile)profiles[m]=profile;});const r=await sourceAction('publish',{models,profiles});if(r){pretty('#routeList',r);await loadSources();}};
+  $('#btnSourcePublish').onclick=async()=>{const models=$$('#sourceModelList input:checked').map(cb=>cb.value);const profile=$('#sourceProfile').value;const profiles={};models.forEach(m=>{if(profile)profiles[m]=profile;});const r=await api('POST','/admin/sources/publish',{source_id:selectedSource(),models,profiles});if(adminReady(r)){pretty('#routeList',r.data);await loadSources();}};
   $('#btnSourceDelete').onclick=async()=>{const id=selectedSource();if(!id||!confirm(`刪除來源 ${id} 及其發布路由？`))return;const r=await sourceAction('delete');if(r)loadSources();};
-  $('#btnKeyCreate').onclick=async()=>{const r=await api('POST','/admin/keys',{action:'create',label:$('#newKeyLabel').value});if(adminReady(r)){pretty('#newKeyResult',r.data.key);$('#newKeyResult').style.display='block';loadKeys();}};
+  $('#btnKeyCreate').onclick=async()=>{const r=await api('POST','/admin/keys',{action:'create',label:$('#newKeyLabel').value,scope:$('#newKeyScope').value});if(adminReady(r)){await loadAccess();showCreatedKey(r.data.key.token,r.data.key.scope);$('#newKeyLabel').value='';loadKeys();}};
   $('#btnKeysRefresh').onclick=loadKeys;
+  $('#btnAccessReload').onclick=loadAccess;
+  $('#btnCopyApiUrl').onclick=()=>ACCESS_VIEW.apiBase&&copyText(ACCESS_VIEW.apiBase,'已複製 API 位址');
   $('#btnAccountCreate').onclick=async()=>{const r=await api('POST','/admin/accounts',{action:'create',username:$('#newAccountName').value,password:$('#newAccountPassword').value,role:'owner'});if(adminReady(r)){showMsg('帳號已建立',true);$('#newAccountPassword').value='';loadAccounts();}};
   $('#btnAccountsRefresh').onclick=loadAccounts;
-  $('#btnConversations').onclick=loadConversations;
-  $('#btnConversationDetail').onclick=async()=>{const id=$('#conversationSelect').value;if(!id)return;const r=await api('GET','/admin/conversations/'+encodeURIComponent(id));if(adminReady(r))pretty('#conversationData',r.data);};
+  $('#btnTraceRefresh').onclick=async()=>{await loadTraceClients();if(TRACE_VIEW.client){await loadTraceConversations();await loadTraceTurns();}};
+  $('#traceDays').onchange=async()=>{TRACE_VIEW.days=traceDays();await loadTraceClients();if(TRACE_VIEW.client){await loadTraceConversations();await loadTraceTurns();}};
+  $('#btnRequestLogs').onclick=loadRequestLogs;
   $('#btnUsage').onclick=loadUsage; $('#btnAudit').onclick=loadAudit;
   $('#btnReplay').onclick=async()=>{const r=await api('POST','/admin/replay',{conversation_id:$('#replayConversation').value,prompt:$('#replayPrompt').value||undefined});if(adminReady(r))pretty('#replayData',r.data);};
   $('#btnCompare').onclick=async()=>{const models=$('#compareModels').value.split(',').map(s=>s.trim()).filter(Boolean);const r=await api('POST','/admin/compare',{models,prompt:$('#comparePrompt').value});if(adminReady(r))pretty('#replayData',r.data);};
   $('#btnRetention').onclick=async()=>{const days=Number($('#retentionDays').value);if(!Number.isInteger(days)||days<1)return showMsg('請輸入大於 0 的天數',false);if(!confirm(`確定刪除 ${days} 天以前的記錄？此操作無法復原。`))return;const r=await api('POST','/admin/retention',{days,confirm:true});if(adminReady(r))showMsg('清理完成：'+JSON.stringify(r.data),true);};
-  api('GET','/armor/registry').then(r=>{if(!r.ok)return;const select=$('#sourceProfile');select.replaceChildren();const fallback=document.createElement('option');fallback.value='';fallback.textContent='依模型預設';select.appendChild(fallback);(r.data.profiles||[]).forEach(profile=>{const o=document.createElement('option');o.value=profile;o.textContent=profile;select.appendChild(o);});});
+  api('GET','/armor/registry').then(r=>{if(!r.ok)return;const select=$('#sourceProfile');select.replaceChildren();const fallback=document.createElement('option');fallback.value='';fallback.textContent='依模型指紋自動套用';select.appendChild(fallback);(r.data.families||r.data.profiles||[]).forEach(profile=>{const id=typeof profile==='string'?profile:profile.id;const option=document.createElement('option');option.value=id;option.textContent=typeof profile==='string'?profile:profile.label;select.appendChild(option);});});
 });
 
 
-/* ---- tuning -------------------------------------------------------------
- * Values come from the server, including their bounds. The page never invents a
- * range: if the server adds a field it appears here, and if it removes one the
- * input disappears with it.
- */
+/* ---- tuning ------------------------------------------------------------- */
+const TUNING_GROUPS = {
+  retry: '重試與評分',
+  context: '上下文整理',
+  memory: '摘要與狀態保留',
+  capture: '記錄與存取',
+  general: '其他',
+};
+
 async function loadTuning() {
   const { ok, data } = await api('GET', '/admin/tuning');
   if (!ok) { showMsg(t('unauthorized') + ': ' + (data.error && data.error.message || ''), false); return; }
   const host = $('#tuningFields');
   host.innerHTML = '';
+  const grouped = new Map();
   (data.fields || []).forEach(field => {
-    const wrap = document.createElement('div');
-    wrap.className = 'row';
-    const label = document.createElement('label');
-    label.style.flex = '2';
-    label.textContent = field.name + (field.note ? ' — ' + field.note : '');
-    const input = document.createElement('input');
-    input.dataset.field = field.name;
-    input.dataset.kind = field.type;
-    input.value = data.current[field.name];
-    wrap.appendChild(label);
-    wrap.appendChild(input);
-    host.appendChild(wrap);
+    const key = field.group || 'general';
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(field);
   });
-  showMsg(t('ready'), true);
+  for (const [group, fields] of grouped) {
+    const card = document.createElement('section');
+    card.className = 'tuning-group';
+    const heading = document.createElement('h2');
+    heading.className = 'card-heading';
+    heading.textContent = TUNING_GROUPS[group] || TUNING_GROUPS.general;
+    card.appendChild(heading);
+    fields.forEach(field => {
+      const row = document.createElement('div');
+      row.className = field.type === 'bool' ? 'tuning-row tuning-toggle' : 'tuning-row';
+      const label = document.createElement('label');
+      const id = 'tune-' + field.name;
+      label.htmlFor = id;
+      label.textContent = field.label || field.name;
+      const input = document.createElement('input');
+      input.id = id;
+      input.dataset.field = field.name;
+      input.dataset.kind = field.type;
+      if (field.type === 'bool') {
+        input.type = 'checkbox';
+        input.checked = Boolean(data.current[field.name]);
+      } else {
+        input.type = 'number';
+        input.min = field.min;
+        input.max = field.max;
+        input.step = field.type === 'float' ? '0.1' : '1';
+        input.value = data.current[field.name];
+      }
+      row.append(label, input);
+      const bounds = field.type !== 'bool' && field.min !== undefined
+        ? `範圍 ${field.min}–${field.max}` : '';
+      if (field.note || bounds) {
+        const help = document.createElement('small');
+        help.className = 'field-hint';
+        help.textContent = [field.note, bounds]
+          .filter(Boolean).join(' · ');
+        row.appendChild(help);
+      }
+      card.appendChild(row);
+    });
+    host.appendChild(card);
+  }
+  showMsg('已載入目前設定', true);
 }
 
 async function saveTuning() {
   const payload = {};
   $$('#tuningFields input').forEach(input => {
     payload[input.dataset.field] = input.dataset.kind === 'bool'
-      ? (input.value === 'true' || input.value === '1')
-      : input.value;
+      ? input.checked : input.valueAsNumber;
   });
   const { ok, data } = await api('POST', '/admin/tuning', payload);
-  showMsg(ok ? t('copied') : (data.error && data.error.message || t('error')), ok);
+  showMsg(ok ? '設定已套用並保存' : (data.error && data.error.message || t('error')), ok);
+  if (ok) await loadTuning();
 }
 
 document.addEventListener('DOMContentLoaded', function () {

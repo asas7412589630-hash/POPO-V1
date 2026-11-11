@@ -65,37 +65,16 @@ class ResponseWriter:
         self.handler.send_response(200)
         self.handler.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.handler.send_header("Cache-Control", "no-cache")
-        # HTTP/1.1 with neither Content-Length nor Transfer-Encoding leaves the
-        # client no way to know the body ended except closing the socket. A
-        # client that reconnects on timeout then receives the same events twice
-        # (measured 2026-11-11: two `data: [DONE]` markers for one completion).
-        # Chunked framing states the end explicitly.
-        self.handler.send_header("Transfer-Encoding", "chunked")
         self.handler.send_header("Connection", "keep-alive")
         self.handler.send_header("X-Accel-Buffering", "no")
         self._apply_cors()
         for name, value in (headers or {}).items():
             self.handler.send_header(name, value)
         self.handler.end_headers()
-        self._chunked = True
 
     def sse_chunk(self, chunk: bytes) -> None:
-        if not chunk:
-            return
-        # chunked framing: <hex length>CRLF<data>CRLF
-        self.handler.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
+        self.handler.wfile.write(chunk)
         self.handler.wfile.flush()
-
-    def sse_end(self) -> None:
-        """Terminate a chunked body with the zero-length chunk."""
-        if not getattr(self, "_chunked", False):
-            return
-        try:
-            self.handler.wfile.write(b"0\r\n\r\n")
-            self.handler.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-        self._chunked = False
 
     def _write(self, body: bytes) -> None:
         try:

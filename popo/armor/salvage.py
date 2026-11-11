@@ -100,10 +100,11 @@ def strip_sentinels(text: str, sentinels: list[str]) -> str:
 
 
 def dedupe_armor(messages: list[dict], sentinels: list[str]) -> list[dict]:
-    """Strip echoed sentinels from the first system message only.
+    """Remove an echoed armor envelope before injecting the current one.
 
-    Only the leading system message can carry injected armor; cleaning user turns
-    would silently edit what the person actually typed.
+    When a client replays the proxy's system message, remove its opaque policy
+    prefix and keep only the client-note section. Never inspect or rewrite the
+    policy body. User turns are untouched.
     """
     if not messages:
         return messages
@@ -113,7 +114,26 @@ def dedupe_armor(messages: list[dict], sentinels: list[str]) -> list[dict]:
     content = first.get("content")
     if not isinstance(content, str):
         return messages
-    cleaned = strip_sentinels(content, sentinels)
+    marker_name = str(first.get("name") or "")
+    if marker_name.startswith("_popo_armor_policy:"):
+        return [message for message in messages
+                if not (str(message.get("name") or "").startswith("_popo_armor_policy:")
+                        or message.get("name") == "_popo_armor_finalizer")]
+    if marker_name.startswith("_popo_armor:"):
+        try:
+            prefix_len = int(marker_name.split(":", 1)[1])
+        except ValueError:
+            prefix_len = len(content)
+        suffix = content[min(max(0, prefix_len), len(content)):]
+        boundary = "\n\n---\n\n[client note]\n"
+        cleaned = suffix[len(boundary):] if suffix.startswith(boundary) else ""
+        closing = "</identity_lock>"
+        if cleaned.rstrip().endswith(closing):
+            lock_at = cleaned.rfind("<identity_lock>")
+            if lock_at >= 0:
+                cleaned = cleaned[:lock_at].rstrip()
+    else:
+        cleaned = strip_sentinels(content, sentinels)
     if cleaned == content:
         return messages
     result = list(messages)

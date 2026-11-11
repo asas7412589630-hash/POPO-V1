@@ -37,6 +37,19 @@ pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMon
 @media(max-width:390px){.brand-sub{display:none}.top-actions{gap:5px}.lang-switch select{min-width:62px}.row>*{flex-basis:100%}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
+<style>
+.tuning-group{padding:15px}.tuning-group>.card-heading{margin:0 0 11px}
+.access-share{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3)}.access-share-row{display:flex;align-items:center;gap:8px}.access-share-row code{flex:1;min-width:0;overflow-wrap:anywhere;color:#c9d2df;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.access-share-row button{flex:0 0 auto}.new-key-result{margin-top:10px;padding:12px;border:1px solid rgba(104,211,145,.42);border-radius:10px;background:rgba(20,44,30,.38)}.new-key-result .key-token{display:block;margin-top:7px;overflow-wrap:anywhere;color:#dff5e5;font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace}.new-key-result .field-hint{margin-top:8px}
+.tuning-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,220px);align-items:center;gap:8px 14px;padding:10px 0;border-top:1px solid rgba(43,48,59,.72)}
+.tuning-row>label{color:#dbe0e8;font-size:13px}.tuning-row>input[type=number]{max-width:220px}
+.tuning-row>.field-hint{grid-column:1/-1;margin:0}.tuning-toggle{grid-template-columns:minmax(0,1fr) 22px}
+#tuningFields{display:grid;gap:8px}.tuning-group{padding:8px 0}.tuning-group+.tuning-group{border-top:1px solid var(--line)}.tuning-group>.card-heading{font-size:15px;margin:0 0 7px}
+.trace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}.trace-pane{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);overflow:hidden}.trace-pane h3{font-size:12px;margin:0;padding:9px 10px;border-bottom:1px solid var(--line);color:var(--dim)}.trace-list{max-height:290px;overflow:auto;padding:4px}.trace-item{display:block;width:100%;text-align:left;border:0;border-radius:7px;background:transparent;padding:8px;color:var(--fg);margin:0 0 2px}.trace-item:hover,.trace-item.sel{background:var(--surface-2)}.trace-item strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.trace-item small{display:block;color:var(--faint);font-size:10px;margin-top:3px;line-height:1.45}.trace-detail{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}.trace-detail pre{max-height:55vh;overflow:auto;white-space:pre-wrap;word-break:break-word}.trace-attempt{border:1px solid var(--line);border-radius:9px;padding:9px;margin:8px 0}.trace-attempt summary{cursor:pointer;font-size:12px}.trace-attempt pre{margin-bottom:0}
+.tuning-toggle input[type=checkbox]{width:18px;height:18px;accent-color:var(--teal);justify-self:center}
+@media(max-width:520px){.tuning-row{grid-template-columns:minmax(0,1fr) minmax(100px,42%)}.tuning-row>input[type=number]{max-width:none}}
+@media(max-width:440px){.access-share-row{flex-wrap:wrap}.access-share-row code{flex-basis:100%}.access-share-row button{flex:1}}
+@media(max-width:760px){.trace-grid{grid-template-columns:1fr}.trace-list{max-height:180px}}
+</style>
 </head>
 <body>
 <div class="shell">
@@ -51,16 +64,15 @@ pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMon
   <section class="intro"><h1>模型閘道，清楚好管理。</h1><p>設定上游、管理存取權，並檢視模型使用狀態。</p></section>
 
   <details class="operator" id="operatorAccess">
-    <summary><span data-i18n="adminKey">Operator Admin Key</span><span class="status-line">管理員操作憑證</span></summary>
-    <div class="operator-body"><label for="adminKey">Operator Admin Key</label><input id="adminKey" type="password" autocomplete="off" placeholder="管理頁操作需要 operator admin key"><small>憑證只保留於這個頁面工作階段，不會寫入瀏覽器儲存空間。</small></div>
+    <summary><span>遠端管理選項</span><span class="status-line">本機使用免登入</span></summary>
+    <div class="operator-body"><label for="adminKey">遠端管理 API 金鑰（選填）</label><input id="adminKey" type="password" autocomplete="off" placeholder="只有遠端管理時需要"><small>本機同源控制台會自動取得管理權。遠端部署請使用 POPO_ADMIN_KEY；憑證只保留在目前頁面記憶體。</small></div>
   </details>
 
   <div id="msg" role="status" aria-live="polite"></div>
 
   <nav class="tabs" id="tabs" role="tablist" aria-label="POPO 管理功能">
     <button data-tab="setup" class="on" role="tab" aria-selected="true" data-i18n="setup">設定</button>
-    <button data-tab="sources" role="tab" aria-selected="false" data-i18n="sources">來源</button>
-    <button data-tab="keys" role="tab" aria-selected="false" data-i18n="keys">金鑰</button>
+    <button data-tab="manage" role="tab" aria-selected="false" data-i18n="manage">管理</button>
     <button data-tab="records" role="tab" aria-selected="false" data-i18n="records">紀錄</button>
     <button data-tab="tuning" role="tab" aria-selected="false" data-i18n="tuning">調校</button>
     <button data-tab="about" role="tab" aria-selected="false" data-i18n="about">說明</button>
@@ -69,38 +81,41 @@ pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMon
   <main class="workspace">
     <section id="tab-setup" class="step on" role="tabpanel">
       <div class="card">
-        <div class="card-head"><div><span class="eyebrow">01 · QUICK SETUP</span><h2 class="card-heading" data-i18n="upstreamKey">上游 API 設定</h2><p class="card-note">連線測試後選擇要提供給用戶的模型。</p></div></div>
+        <div class="card-head"><div><span class="eyebrow">01 · QUICK SETUP</span><h2 class="card-heading" data-i18n="upstreamKey">上游 API 設定</h2><p class="card-note">填入上游網址與密鑰，讀取模型後勾選要發布的模型和積木。</p></div></div>
         <div class="form-grid">
           <div><label class="field-label" for="upstreamHost" data-i18n="baseUrl">Base URL</label><input id="upstreamHost" placeholder="例如 https://api.example.com/v1" autocomplete="url"></div>
           <div><label class="field-label" for="upstreamKey" data-i18n="apiKey">API Key</label><input id="upstreamKey" type="password" placeholder="上游 API Key" autocomplete="new-password"></div>
-          <div><label class="field-label" for="upstreamPrefix">路徑前綴</label><input id="upstreamPrefix" placeholder="選填，例如 v1"></div>
-          <div><label class="field-label" for="setupToken" data-i18n="setupToken">首次設定碼</label><input id="setupToken" type="password" autocomplete="off" placeholder="裝置首次設定碼（若有要求）"></div>
+        </div>
+        <details class="disclosure"><summary>進階連線設定</summary><div class="disclosure-body"><div class="form-grid"><div><label class="field-label" for="upstreamPrefix">路徑前綴</label><input id="upstreamPrefix" placeholder="選填，例如 v1"></div><div><label class="field-label" for="setupToken" data-i18n="setupToken">首次設定碼</label><input id="setupToken" type="password" autocomplete="off" placeholder="遠端首次設定時使用"></div></div></div></details>
+        <div class="action-row">
+          <button id="btnList" class="accent-teal">讀取模型</button>
+        </div>
+        <div class="form-grid">
+          <div><label class="field-label" for="setupKeyScope">新 API 金鑰範圍</label><select id="setupKeyScope"><option value="public">對外：可經公開網址從其他網路使用</option><option value="internal">對內：僅本機／內網可用</option></select></div>
         </div>
         <div class="action-row">
-          <button id="btnList" class="accent-teal">① 讀取模型清單</button>
-          <button id="btnVerify" class="ghost">② 驗證金鑰</button>
-          <button id="btnTest" class="ghost">③ 測試對話</button>
-        </div>
-        <div class="action-row">
-          <button id="btnSetup" class="primary">建立 POPO API</button>
+          <button id="btnSetup" class="primary" disabled>套用設定並建立 API</button>
           <span id="modelCount" class="hint"></span>
         </div>
+        <p class="card-note" style="margin-top:8px">套用時會自動驗證連線並送出一次短對話，可能消耗少量上游用量。</p>
         <div class="group" id="modelGroup" style="display:none;margin-top:17px">
-          <div class="card-head"><div><h2 class="card-heading" data-i18n="publish">發布模型</h2><p class="card-note">勾選要公開的模型。重新建立 API 時會套用選取結果。</p></div></div>
+          <div class="card-head"><div><h2 class="card-heading" data-i18n="publish">發布模型與積木</h2><p class="card-note">勾選要公開的模型，並為每個模型選擇積木；DeepSeek、Kimi、GLM、國模通用共用 V1 Cinder 組合，GPT 與不注入獨立處理。</p></div></div>
           <div class="model-list" id="modelList"></div>
         </div>
         <div id="tab-result" class="result-panel" aria-live="polite">
-          <div class="card-head"><div><h2 class="card-heading">POPO API 已就緒</h2><p class="card-note">將 API 網址與金鑰填入相容的用戶端。</p></div><button id="btnRegen">重新產生金鑰</button></div>
+          <div class="card-head"><div><h2 class="card-heading">POPO API 已就緒</h2><p class="card-note">將 API 網址與金鑰填入相容的用戶端；金鑰只在建立時顯示。</p></div></div>
           <div class="result-grid">
-            <div class="result"><div class="k">API 網址 <button class="copy" data-target="outUrl" data-i18n="copy">複製</button></div><div class="v" id="outUrl">-</div></div>
+            <div class="result"><div class="k">API 網址 <button class="copy" data-target="outUrl" data-i18n="copy">複製</button></div><div class="v" id="outUrl">-</div><small class="field-hint" id="outUrlHint"></small></div>
             <div class="result"><div class="k">API 金鑰 <button class="copy" data-target="outKey" data-i18n="copy">複製</button></div><div class="v" id="outKey">-</div></div>
             <div class="result full"><div class="k">已發布模型</div><div class="v" id="outModels">-</div></div>
           </div>
+          <div class="action-row"><button id="btnCopyClientConfig" class="primary">複製網址 + 金鑰</button></div>
         </div>
       </div>
     </section>
 
-    <section id="tab-sources" class="step" role="tabpanel">
+    <section id="panel-sources" class="step" role="tabpanel">
+      <div class="card"><div class="card-head"><div><span class="eyebrow">ADVANCED</span><h2 class="card-heading">多來源與模型路由</h2><p class="card-note">保留多供應商路由、來源密鑰管理與模型分配。</p></div><button id="btnSourcesBack">返回管理</button></div></div>
       <div class="card">
         <div class="card-head"><div><span class="eyebrow">02 · PROVIDERS</span><h2 class="card-heading" data-i18n="sources">上游來源</h2><p class="card-note">管理多個相容服務，密鑰只在新增或輪替時輸入。</p></div></div>
         <div class="form-grid">
@@ -121,28 +136,41 @@ pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMon
       </div>
     </section>
 
-    <section id="tab-keys" class="step" role="tabpanel">
+    <section id="tab-manage" class="step" role="tabpanel">
       <div class="card">
         <div class="card-head"><div><span class="eyebrow">03 · ACCESS</span><h2 class="card-heading" data-i18n="keys">API 金鑰</h2><p class="card-note">建立、停用或刪除用戶端金鑰。</p></div></div>
-        <div class="row"><input id="newKeyLabel" placeholder="金鑰標籤"><button id="btnKeyCreate" class="primary">建立金鑰</button><button id="btnKeysRefresh">重新整理</button></div>
-        <div id="keyList" class="model-list">尚未載入。</div><pre id="newKeyResult" style="display:none"></pre>
+        <div class="access-share">
+          <div class="field-label">其他裝置使用的 API 位址</div>
+          <div class="access-share-row"><code id="clientApiUrl">讀取中…</code><button id="btnCopyApiUrl">複製網址</button><button id="btnAccessReload" aria-label="重新檢查網址">↻</button></div>
+          <small id="clientApiStatus" class="field-hint">確認公開隧道可連線後才會標示為可跨網路使用。</small>
+        </div>
+        <div class="row"><input id="newKeyLabel" placeholder="金鑰標籤"><select id="newKeyScope" aria-label="金鑰範圍"><option value="internal">對內（本機／內網）</option><option value="public">對外（公開網址）</option></select><button id="btnKeyCreate" class="primary">建立金鑰</button><button id="btnKeysRefresh">重新整理</button></div>
+        <div id="keyList" class="model-list">尚未載入。</div><div id="newKeyResult" class="new-key-result" style="display:none"></div>
+        <div class="action-row"><button id="btnOpenSources">進階：多來源與模型路由</button></div>
       </div>
+      <details class="disclosure"><summary>進階：帳號管理</summary><div class="disclosure-body">
       <div class="card">
         <div class="card-head"><div><h2 class="card-heading">帳號</h2><p class="card-note">建立管理帳號、重設密碼或停用帳號。</p></div></div>
         <div class="form-grid"><input id="newAccountName" placeholder="使用者名稱" autocomplete="username"><input id="newAccountPassword" type="password" placeholder="初始密碼" autocomplete="new-password"></div>
         <div class="action-row"><button id="btnAccountCreate" class="primary">建立帳號</button><button id="btnAccountsRefresh">重新整理帳號</button></div>
         <div id="accountList" class="model-list" style="margin-top:10px">尚未載入。</div>
       </div>
+      </div></details>
     </section>
 
     <section id="tab-records" class="step" role="tabpanel">
       <div class="card">
-        <div class="card-head"><div><span class="eyebrow">04 · ACTIVITY</span><h2 class="card-heading" data-i18n="records">對話紀錄</h2><p class="card-note">查看對話請求、用量統計與管理稽核。</p></div></div>
-        <div class="row"><button id="btnConversations" class="accent-teal">載入對話</button><select id="conversationSelect" aria-label="選擇對話"></select><button id="btnConversationDetail">查看內容</button></div>
-        <pre id="conversationData">尚未載入。</pre>
-        <details class="disclosure"><summary>用量與稽核</summary><div class="disclosure-body">
+        <div class="card-head"><div><span class="eyebrow">04 · ACTIVITY</span><h2 class="card-heading" data-i18n="records">對話紀錄</h2><p class="card-note">依客戶端、對話、回合查看；打開回合可讀每次嘗試和完整回覆。</p></div></div>
+        <div class="row tight"><label for="traceDays">時間範圍</label><select id="traceDays"><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="60">最近 60 天</option></select><button id="btnTraceRefresh" class="accent-teal">重新整理紀錄</button><span id="traceScope" class="hint"></span></div>
+        <div class="trace-grid">
+          <div class="trace-pane"><h3>客戶端</h3><div id="traceClients" class="trace-list">載入中…</div></div>
+          <div class="trace-pane"><h3>對話</h3><div id="traceConversations" class="trace-list">選擇客戶端</div></div>
+          <div class="trace-pane"><h3>回合</h3><div id="traceTurns" class="trace-list">選擇客戶端或對話</div></div>
+        </div>
+        <div id="traceDetail" class="trace-detail hint">選擇回合以查看完整內容。</div>
+        <details class="disclosure"><summary>用量、稽核與服務請求</summary><div class="disclosure-body">
           <div class="row"><label for="usageDays">天數</label><input id="usageDays" type="number" min="1" max="365" value="7"><button id="btnUsage">查詢用量</button><button id="btnAudit">執行稽核</button></div>
-          <pre id="usageData">尚未查詢。</pre><pre id="auditData">尚未查詢。</pre>
+          <button id="btnRequestLogs">查看最近 200 筆請求</button><pre id="requestLogData">尚未查詢。</pre><pre id="usageData">尚未查詢。</pre><pre id="auditData">尚未查詢。</pre>
         </div></details>
       </div>
       <div class="card">
@@ -158,15 +186,9 @@ pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMon
 
     <section id="tab-tuning" class="step" role="tabpanel">
       <div class="card">
-        <div class="card-head"><div><span class="eyebrow">05 · BEHAVIOR</span><h2 class="card-heading" data-i18n="tuning">執行調校</h2><p class="card-note" data-i18n="tuningHint">需要 operator 憑證。超出範圍會被拒絕，不會自動夾住。</p></div></div>
+        <div class="card-head"><div><span class="eyebrow">05 · BEHAVIOR</span><h2 class="card-heading" data-i18n="tuning">調教</h2><p class="card-note">依 V1 原有四組整理。每項變更即時生效，並保存供重啟後載入。</p></div></div>
         <div id="tuningFields"></div>
-        <div class="action-row"><button id="btnTuningLoad" data-i18n="loadTuning">讀取設定</button><button id="btnTuningSave" class="primary" data-i18n="apply">套用變更</button></div>
-      </div>
-      <div class="card">
-        <div class="card-head"><div><h2 class="card-heading" data-i18n="armor">破甲預覽</h2><p class="card-note">預覽指定模型與等級會使用的 system prompt。</p></div></div>
-        <div class="row"><select id="armorModel" aria-label="選擇模型"></select><select id="armorLevel" aria-label="破甲等級"><option value="">預設</option><option value="native">native</option><option value="full">full</option><option value="lean">lean</option><option value="off">off</option></select><button id="btnPreview" class="accent-teal" data-i18n="preview">預覽</button></div>
-        <pre id="armorPreview">選擇模型與層級後按預覽。</pre>
-        <details class="disclosure"><summary>管理 profile 詳情</summary><div class="disclosure-body"><button id="btnAdminProfile">讀取管理 profile</button><pre id="adminProfileData">需要 operator admin key。</pre></div></details>
+        <div class="action-row"><button id="btnTuningLoad">重新讀取</button><button id="btnTuningSave" class="primary" data-i18n="apply">套用變更</button></div>
       </div>
     </section>
 
@@ -175,7 +197,7 @@ pre{white-space:pre-wrap;word-break:break-word;font:12px/1.55 ui-monospace,SFMon
         <div class="card-head"><div><span class="eyebrow">06 · GUIDE</span><h2 class="card-heading" data-i18n="about">使用說明</h2><p class="card-note">控制台保留 POPO V1 的精簡導覽，並整合 V2 管理功能。</p></div></div>
         <h2>快速開始</h2>
         <p><b>三步驟：</b>① 填 Base URL 後按「讀取模型清單」（<b>金鑰可留空</b>，多數供應商不需金鑰就能列模型）。
-② 勾選要發布的模型，<b>每個模型可各自選破甲</b>（預設「依家族」自動判斷）。③ 需要時驗證金鑰、測一次對話，最後建立 POPO API。</p>
+② 勾選要發布的模型，<b>每個模型可各自選積木</b>（四個非 GPT 家族共用 V1 Cinder 組合）。③ 需要時驗證金鑰、測一次對話，最後建立 POPO API。</p>
         <h2>多來源與路由</h2>
         <p>在「來源」新增相容的上游服務，取得模型、測試連線，並發布模型路由。模型 ID 可連到不同來源，管理員憑證用於來源與帳號管理。</p>
         <h2>使用管理</h2>

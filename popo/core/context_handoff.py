@@ -45,3 +45,12 @@ def append_context_instruction(messages: list[dict], text: str) -> list[dict]:
             return output
     return [{"role": "system", "name": "_popo_handoff_instruction",
              "content": text}] + output
+
+
+def insert_context_instruction(messages: list[dict], text: str) -> list[dict]:
+    """Place a proxy note after the leading armor message without editing it."""
+    output = list(messages)
+    index = 1 if output and output[0].get("role") == "system" else 0
+    output.insert(index, {"role": "system", "name": "_popo_handoff_instruction",
+                          "content": text})
+    return output

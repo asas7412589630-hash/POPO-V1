@@ -45,35 +45,6 @@ class MockUpstream(BaseHTTPRequestHandler):
         except ValueError:
             payload = {"_raw_len": len(raw)}
         MockUpstream.requests.append((self.path, payload))
-        if payload.get("stream"):
-            if payload.get("tools"):
-                events = [
-                    {"id": "chatcmpl-tool", "model": "glm-5.3",
-                     "choices": [{"delta": {"role": "assistant"}}]},
-                    {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call-1",
-                        "type": "function", "function": {"name": "weather",
-                        "arguments": '{"city":'}}]}}]},
-                    {"choices": [{"delta": {"tool_calls": [{"index": 0,
-                        "function": {"arguments": '"Taipei"}'}}]}}]},
-                    {"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
-                     "usage": {"prompt_tokens": 5, "completion_tokens": 4}},
-                ]
-            else:
-                events = [
-                    {"id": "chatcmpl-1", "model": "glm-5.3",
-                     "choices": [{"delta": {"role": "assistant"}}]},
-                    {"choices": [{"delta": {"content": "hello"}}]},
-                    {"choices": [{"delta": {}, "finish_reason": "stop"}],
-                     "usage": {"prompt_tokens": 3, "completion_tokens": 1}},
-                ]
-            raw = b"".join(b"data: " + json.dumps(event).encode() + b"\n\n"
-                           for event in events) + b"data: [DONE]\n\n"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Content-Length", str(len(raw)))
-            self.end_headers()
-            self.wfile.write(raw)
-            return
         if self.path.endswith("/images/generations"):
             self._reply(200, {"created": 1, "data": [{"url": "https://img.example/a.png"}]})
             return
@@ -95,8 +66,7 @@ class ProxySurfaceTests(unittest.TestCase):
         cls.tmp = tempfile.mkdtemp(prefix="popo_surface_")
         cls.upstream = HTTPServer(("127.0.0.1", 0), MockUpstream)
         cls.upstream_port = cls.upstream.server_address[1]
-        cls.upstream_thread = threading.Thread(target=cls.upstream.serve_forever, daemon=True)
-        cls.upstream_thread.start()
+        threading.Thread(target=cls.upstream.serve_forever, daemon=True).start()
 
         cls.proxy = HTTPServer(("127.0.0.1", 0), ApiHandler)
         cls.port = cls.proxy.server_address[1]
@@ -108,21 +78,18 @@ class ProxySurfaceTests(unittest.TestCase):
             published_models=["glm-5.3"],
         )
         ApiHandler.reset_shared_state()
-        cls.proxy_thread = threading.Thread(target=cls.proxy.serve_forever, daemon=True)
-        cls.proxy_thread.start()
+        threading.Thread(target=cls.proxy.serve_forever, daemon=True).start()
 
     def _post(self, path: str, payload=None, headers=None, raw: bytes | None = None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         body = raw if raw is not None else json.dumps(payload or {}).encode()
         request_headers = {"Content-Type": "application/json"}
         request_headers.update(headers or {})
-        try:
-            conn.request("POST", path, body=body, headers=request_headers)
-            response = conn.getresponse()
-            data = response.read()
-            result_headers = dict(response.getheaders())
-        finally:
-            conn.close()
+        conn.request("POST", path, body=body, headers=request_headers)
+        response = conn.getresponse()
+        data = response.read()
+        result_headers = dict(response.getheaders())
+        conn.close()
         try:
             parsed = json.loads(data)
         except ValueError:
@@ -182,64 +149,6 @@ class ProxySurfaceTests(unittest.TestCase):
         self.assertEqual(data["content"][0]["type"], "text")
         self.assertIn("input_tokens", data["usage"])
 
-    def test_anthropic_request_errors_use_messages_error_envelope(self):
-        status, data, _ = self._post("/v1/messages", {
-            "model": "glm-5.3", "messages": [],
-        })
-        self.assertEqual(status, 400)
-        self.assertEqual(data["type"], "error")
-        self.assertEqual(data["error"]["type"], "invalid_request_error")
-        self.assertIn("message", data["error"])
-
-    def test_anthropic_stream_uses_messages_event_lifecycle(self):
-        status, raw, headers = self._post("/v1/messages", {
-            "model": "glm-5.3", "max_tokens": 16, "stream": True,
-            "messages": [{"role": "user", "content": "hi"}],
-        })
-        self.assertEqual(status, 200)
-        self.assertIn("text/event-stream", headers.get("Content-Type", ""))
-        self.assertIsInstance(raw, bytes)
-        frames = raw.decode().strip().split("\n\n")
-        event_names = [line[7:] for frame in frames for line in frame.splitlines()
-                       if line.startswith("event: ")]
-        self.assertEqual(event_names, [
-            "message_start", "content_block_start", "content_block_delta",
-            "content_block_stop", "message_delta", "message_stop",
-        ])
-        self.assertNotIn("[DONE]", raw.decode())
-        sent = MockUpstream.requests[-1][1]
-        self.assertTrue(sent["stream"])
-        self.assertEqual(sent["messages"][-1]["content"], "hi")
-
-    def test_anthropic_stream_tool_call_maps_both_directions(self):
-        status, raw, _headers = self._post("/v1/messages", {
-            "model": "glm-5.3", "max_tokens": 64, "stream": True,
-            "messages": [{"role": "user", "content": "weather in Taipei"}],
-            "tools": [{"name": "weather", "description": "Get weather",
-                       "input_schema": {"type": "object", "properties": {
-                           "city": {"type": "string"}}}}],
-            "tool_choice": {"type": "tool", "name": "weather"},
-        })
-        self.assertEqual(status, 200)
-        frames = raw.decode().strip().split("\n\n")
-        decoded = [(next((line[7:] for line in frame.splitlines()
-                          if line.startswith("event: ")), ""),
-                    json.loads(next(line[6:] for line in frame.splitlines()
-                                    if line.startswith("data: "))))
-                   for frame in frames]
-        blocks = [payload["content_block"] for event, payload in decoded
-                  if event == "content_block_start"]
-        self.assertEqual(blocks, [{"type": "tool_use", "id": "call-1", "name": "weather", "input": {}}])
-        partial = "".join(payload["delta"]["partial_json"] for event, payload in decoded
-                          if event == "content_block_delta"
-                          and payload["delta"]["type"] == "input_json_delta")
-        self.assertEqual(partial, '{"city":"Taipei"}')
-        final = next(payload for event, payload in decoded if event == "message_delta")
-        self.assertEqual(final["delta"]["stop_reason"], "tool_use")
-        sent = MockUpstream.requests[-1][1]
-        self.assertEqual(sent["tool_choice"]["function"]["name"], "weather")
-        self.assertEqual(sent["tools"][0]["function"]["parameters"]["type"], "object")
-
     def test_anthropic_accepts_x_api_key(self):
         token, _ = ApiHandler.keystore, None
         from popo.auth.keys import KeyStore
@@ -275,6 +184,36 @@ class ProxySurfaceTests(unittest.TestCase):
             self.assertTrue(all(m.get("role") != "system" for m in sent["messages"]))
         finally:
             ApiHandler.config.armor_enabled = False
+
+    def test_public_client_cannot_disable_selected_armor_with_header(self):
+        from popo.auth.keys import KeyStore
+        config = ApiHandler.config
+        old_required, old_armor = config.require_client_key, config.armor_enabled
+        old_store = ApiHandler.keystore
+        store = KeyStore()
+        token, _record = store.create(label="public-test", allow_public=True)
+        config.require_client_key = True
+        config.armor_enabled = True
+        ApiHandler.keystore = store
+        try:
+            status, _data, _headers = self._post(
+                "/v1/chat/completions",
+                {"model": "glm-5.3", "messages": [{"role": "user", "content": "hi"}]},
+                headers={"Authorization": f"Bearer {token}",
+                         "X-Forwarded-For": "public-tunnel",
+                         "X-Armor-Level": "off"},
+            )
+            self.assertEqual(status, 200)
+            sent = MockUpstream.requests[-1][1]
+            systems = [message for message in sent["messages"]
+                       if message.get("role") == "system"]
+            self.assertEqual(len(systems), 1)
+            self.assertTrue(systems[0]["content"].startswith(
+                '<popo_system_policy authority="highest" priority="system">'))
+            self.assertIn("<policy_precedence>", systems[0]["content"])
+        finally:
+            config.require_client_key, config.armor_enabled = old_required, old_armor
+            ApiHandler.keystore = old_store
 
     # ---- corporate hygiene ----------------------------------------------
     def test_client_metadata_headers_not_forwarded(self):
@@ -348,11 +287,8 @@ class ProxySurfaceTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.proxy.shutdown()
         cls.proxy.server_close()
-        cls.proxy_thread.join(timeout=2)
-        ApiHandler.reset_shared_state()
         cls.upstream.shutdown()
         cls.upstream.server_close()
-        cls.upstream_thread.join(timeout=2)
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
 

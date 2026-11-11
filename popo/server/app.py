@@ -44,13 +44,6 @@ class ApiHandler(DiscoveryRoutes, SetupRoutes, InferenceRoutes, SessionRoutes,
 
     @classmethod
     def reset_shared_state(cls) -> None:
-        # Reconfiguration and test teardown must not orphan keep-alive sockets.
-        # SourceRouter and SourceFactory both expose close(); custom pickers may
-        # not, so keep this lifecycle hook optional.
-        old_sources = getattr(cls, "_source_factory", None)
-        close_sources = getattr(old_sources, "close", None)
-        if callable(close_sources):
-            close_sources()
         cls.records = None
         cls.keystore = None
         cls.accounts = None
@@ -116,21 +109,8 @@ class ApiHandler(DiscoveryRoutes, SetupRoutes, InferenceRoutes, SessionRoutes,
         if exc.status and 400 <= exc.status < 600:
             status = exc.status
         try:
-            if urlparse(self.path).path == "/v1/messages":
-                error_type = {
-                    400: "invalid_request_error",
-                    401: "authentication_error",
-                    403: "permission_error",
-                    404: "not_found_error",
-                    429: "rate_limit_error",
-                }.get(status, "api_error")
-                self._writer().json(status, {
-                    "type": "error",
-                    "error": {"type": error_type, "message": exc.message},
-                })
-            else:
-                self._writer().json(status, exc.envelope())
-        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            self._writer().json(status, exc.envelope())
+        except (BrokenPipeError, ConnectionResetError):
             pass
 
     # ---- verbs ----------------------------------------------------------

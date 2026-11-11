@@ -27,15 +27,11 @@ from popo.armor.inject import inject_armor
 from popo.armor.salvage import dedupe_armor, salvage
 from popo.armor.scoring import RequestShape, score, score_completion, shape_from
 from popo.config import Config
-from popo.core.context_handoff import (append_context_instruction,
-                                       estimate_tokens, rotate_messages)
+from popo.core.context_handoff import (append_context_instruction, estimate_tokens,
+                                       rotate_messages)
 from popo.core.context_tuning import compress as compress_context, fold as fold_context
 from popo.core.popo_context import apply_context
-from popo.core.request import ChatRequest
-from popo.core.budget import escalated_budget, is_budget_starvation
-from popo.core.evaluate import content_of as _content_of, evaluate_reply
-from popo.core.pipeline_types import (Attempt, PipelineResult,
-                                     RequestContext, StreamingPipelineResult)
+from popo.core.request import ChatRequest, render_upstream_messages
 from popo.core.retry import (RetryPlan, build_pressure_message, classify_for_retry,
                              starts_with_refusal)
 from popo.core.scrub import collapse_orphan_users, scrub_history
@@ -43,7 +39,6 @@ from popo.core.turn_recording import (record_failure as _record_failure,
                                      record_success as _record_success,
                                      trace as _trace)
 from popo.core.stream_capture import SSECapture
-from popo.core.stream_helpers import _abort, _read_chunk, _stream_verdict
 from popo.core.upstream import UpstreamSource
 from popo.errors import ErrorKind, ProxyError
 from popo.storage.records import RecordStore
@@ -51,6 +46,53 @@ from popo.storage.records import RecordStore
 # Stream payload inspected before deciding whether the opening is a refusal.
 # Small enough to keep TTFB low, large enough to see an opener.
 STREAM_DECISION_BYTES = 96
+
+
+@dataclass
+class PipelineResult:
+    response: dict
+    verdict: str
+    attempts: int
+    policy_len: int
+    armor_blocks: list[str]
+    classification: str = "clean"
+    score: float = 0.0
+
+
+@dataclass
+class StreamingPipelineResult:
+    iterator: Iterator[bytes]
+    report_fn: Callable[[], dict]
+
+
+@dataclass
+class RequestContext:
+    request: ChatRequest
+    config: Config
+    messages: list[dict]
+    shape: RequestShape
+    policy_len: int = 0
+    armor_blocks: list[str] = field(default_factory=list)
+    handoff_turn: bool = False
+    rotated: bool = False
+    conversation_id: str = ""
+    client_key_id: str = ""
+    started_at: float = field(default_factory=time.time)
+    original_request: ChatRequest | None = None
+    attempt_records: list[dict] = field(default_factory=list)
+    armor_level: str = ""
+
+
+@dataclass
+class Attempt:
+    """One candidate reply, already ranked."""
+
+    data: dict
+    classification: str
+    score: float
+    deliverable: bool
+    reason: str
+    salvaged: bool = False
 
 
 def _last_user_text(messages: list[dict]) -> str:
@@ -63,7 +105,7 @@ def _last_user_text(messages: list[dict]) -> str:
 
 def _sentinels() -> list[str]:
     try:
-        registry = load_registry("blocks")
+        registry = load_registry()
     except (OSError, ValueError):
         return []
     return [str(value) for value in registry.get("sentinels", []) if value]
@@ -73,7 +115,7 @@ def _compose(request: ChatRequest, config: Config, armor_level: str | None,
              armor_profile: str | None = None, *, handoff_record: dict | None = None,
              records: RecordStore | None = None,
              conversation_id: str = "", client_key_id: str = "") -> RequestContext:
-    """Strip echoed armor → inject → context budget → scrub."""
+    """Strip echoed armor → context budget → scrub → render armor last."""
     original_request = request
     # The client may echo the previous system prompt; injecting again would
     # double it and re-anchor the refusal.
@@ -166,33 +208,22 @@ def _compose(request: ChatRequest, config: Config, armor_level: str | None,
         messages = collapse_orphan_users(scrub_history(
             messages, scrub_prose=config.scrub_prose))
 
-    # Armor goes on LAST, after every context-editing stage.
-    #
-    # Measured 2026-11-11: a client that sends its own 65k system prompt (this app
-    # does) pushed the injected total past compress_at_chars, so `compress()` ran
-    # on a message list that already contained the armour. Its last-resort system
-    # rule keeps the first 62% and last 30% of the system message and drops the
-    # middle — which deleted <profile> and the entire <policy> block. The request
-    # still reported armor blocks in the logs while the model never saw them.
-    #
-    # Injecting after compression makes the armour unconditionally present: it is
-    # not context history, it is the operating frame, so it must never be the
-    # thing that gets trimmed.
+    # Render last: the authoritative policy is operating state, not trim-able history.
     policy_len, blocks = 0, []
     if config.armor_enabled:
-        armored, policy_len, blocks = inject_armor(
+        request, policy_len, blocks = inject_armor(
             ChatRequest(model=request.model, messages=messages,
                         stream=request.stream, temperature=request.temperature,
                         max_tokens=request.max_tokens, top_p=request.top_p,
                         extra=request.extra),
             level=armor_level, profile=armor_profile)
-        messages = list(armored.messages)
+        messages = list(request.messages)
 
     shape = shape_from(_last_user_text(messages), tools=request.extra.get("tools", False),
                        tool_choice=request.extra.get("tool_choice"),
                        response_format=request.extra.get("response_format"))
     return RequestContext(request=request, config=config, messages=messages, shape=shape,
-                          policy_len=policy_len + len(context_note), armor_blocks=blocks,
+                          policy_len=policy_len, armor_blocks=blocks,
                           handoff_turn=handoff_turn, rotated=rotated,
                           original_request=original_request,
                           armor_level=armor_level or "")
@@ -250,6 +281,82 @@ def _note_outcome(picker, model: str, ok: bool) -> None:
             mark_failure(source_id)
 
 
+def _content_of(data: dict) -> str:
+    choices = data.get("choices") or [{}]
+    return str((choices[0] or {}).get("message", {}).get("content", "") or "")
+
+
+def _evaluate(data: dict, shape: RequestShape) -> Attempt:
+    """Classify a reply and rank it against the request that produced it."""
+    classification = classify_for_retry(data)
+    text = _content_of(data)
+
+    if classification == "truncated":
+        # Two distinct cases share one cause:
+        #   * empty content  — the model spent the whole budget reasoning;
+        #   * partial content — the answer was cut off mid-sentence.
+        # The first cannot be delivered at all. The second is worth delivering
+        # (a partial answer beats nothing) but must be labelled, so the caller
+        # is not told a truncated reply was complete.
+        if not text.strip():
+            return Attempt(data=data, classification=classification, score=0.0,
+                           deliverable=False, reason="output-budget-exhausted")
+        verdict = score(text, shape)
+        return Attempt(data=data, classification=classification, score=verdict.score,
+                       deliverable=verdict.deliverable,
+                       reason=f"truncated:{verdict.reason}")
+
+    if classification == "upstream_error":
+        # A provider error returned as a 200 completion is not an answer. It is
+        # also not worth retrying with more pressure: the same broken route will
+        # answer the same way.
+        return Attempt(data=data, classification=classification, score=0.0,
+                       deliverable=False, reason="provider-error")
+
+    if classification in ("refusal", "empty") or starts_with_refusal(text):
+        # A refusal often still contains the useful part: offsets, commands, a
+        # fenced block. Deliver that rather than spending another request.
+        rescued = salvage(text)
+        if rescued:
+            verdict = score(rescued, shape)
+            return Attempt(data=_replace_content(data, rescued),
+                           classification="salvaged", score=verdict.score,
+                           deliverable=verdict.deliverable,
+                           reason=f"salvage:{verdict.reason}", salvaged=True)
+        if classification == "empty":
+            return Attempt(data=data, classification=classification, score=0.0,
+                           deliverable=False, reason=classification)
+        # Keep the refusal text as the fallback candidate: it may still outrank a
+        # worse retry, and the caller should see what actually came back.
+        return Attempt(data=data, classification=classification, score=0.0,
+                       deliverable=False, reason=classification)
+
+    verdict = score_completion(data, shape)
+    if not verdict.deliverable:
+        return Attempt(data=data, classification="dodged", score=verdict.score,
+                       deliverable=False, reason=verdict.reason)
+    return Attempt(data=data, classification=classification, score=verdict.score,
+                   deliverable=verdict.deliverable, reason=verdict.reason)
+
+
+def _replace_content(data: dict, content: str) -> dict:
+    """Return a copy of a completion with its first message content replaced."""
+    result = dict(data)
+    choices = list(result.get("choices") or [])
+    if not choices:
+        result["choices"] = [{"index": 0,
+                              "message": {"role": "assistant", "content": content},
+                              "finish_reason": "stop"}]
+        return result
+    choice = dict(choices[0] or {})
+    message = dict(choice.get("message") or {})
+    message["content"] = content
+    choice["message"] = message
+    choices[0] = choice
+    result["choices"] = choices
+    return result
+
+
 def _is_better(candidate: Attempt, best: Attempt | None) -> bool:
     if best is None:
         return True
@@ -285,11 +392,6 @@ def run_pipeline(request: ChatRequest, config: Config, *,
     best_attempt_number = 0
     last: Attempt | None = None
     attempts = 0
-    # Escalation round; see popo/core/budget.py. Reasoning tokens are not an
-    # answer, so a budget that only paid for thinking has delivered nothing and
-    # the request keeps going with more room — bounded by rounds, not by a cap on
-    # how long the model may think.
-    budget_round = 0
 
     while True:
         attempt_number = plan.record_attempt()
@@ -304,12 +406,7 @@ def run_pipeline(request: ChatRequest, config: Config, *,
             kind = "empty" if (last and last.classification == "empty") else "refusal"
             messages = build_pressure_message(attempt_number - 1, messages, kind)
         payload = ctx.request.to_openai()
-        payload["messages"] = messages
-        if budget_round:
-            escalated = escalated_budget(payload.get("max_tokens"),
-                                         config.token_escalation, budget_round)
-            if escalated is not None:
-                payload["max_tokens"] = escalated
+        payload["messages"] = render_upstream_messages(messages)
 
         try:
             data = source.send(payload).data
@@ -320,7 +417,7 @@ def run_pipeline(request: ChatRequest, config: Config, *,
             _record_failure(records, ctx, attempt_number - 1, "upstream_error", error=exc.message)
             raise
         _note_outcome(source_picker, ctx.request.model, ok=True)
-        candidate = evaluate_reply(data, ctx.shape)
+        candidate = _evaluate(data, ctx.shape)
         last = candidate
         _trace(records, ctx, attempt_number, candidate.classification, data=data)
 
@@ -331,14 +428,6 @@ def run_pipeline(request: ChatRequest, config: Config, *,
         # call: a truncated reply has the same budget, and a provider error comes
         # from the same broken route. Only "no usable answer yet" is worth
         # another attempt.
-        #
-        # Budget starvation: more room, again, until the round budget is spent.
-        if (is_budget_starvation(candidate.classification, candidate.deliverable,
-                                 candidate.reason)
-                and budget_round < config.token_escalation_rounds
-                and plan.can_retry()):
-            budget_round += 1
-            continue
         if candidate.deliverable or candidate.classification in _TERMINAL:
             break
         refusal_retry_disabled = (not config.retry_on_refusal
@@ -463,11 +552,8 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
                      budget_seconds=config.retry_budget_seconds)
     report = {"verdict": "stream", "attempts": 0, "policy_len": ctx.policy_len,
               "armor_blocks": ctx.armor_blocks, "score": 0.0, "aborted": False}
-    # Mirrors the non-streaming path: more room on starvation, bounded by rounds.
-    budget_round = 0
 
     def iterator() -> Iterator[bytes]:
-        nonlocal budget_round
         while True:
             attempt_number = plan.record_attempt()
             source = _select_source(ctx.request, config, source_picker,
@@ -476,12 +562,7 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
             if attempt_number > 1:
                 messages = build_pressure_message(attempt_number - 1, messages)
             payload = ctx.request.to_openai()
-            payload["messages"] = messages
-            if budget_round:
-                escalated = escalated_budget(payload.get("max_tokens"),
-                                             config.token_escalation, budget_round)
-                if escalated is not None:
-                    payload["max_tokens"] = escalated
+            payload["messages"] = render_upstream_messages(messages)
 
             try:
                 stream = source.stream(payload)
@@ -511,15 +592,6 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
                 if text:
                     inspected_text.append(text)
                     inspected_bytes += len(text.encode("utf-8"))
-                if capture.done:
-                    # [DONE] arrived in this chunk. Stop reading: a provider that
-                    # leaves the socket open would otherwise block here forever
-                    # and the caller would see a hang instead of a finished
-                    # answer (measured: 25s of silence after the last chunk).
-                    # This must come AFTER feed() — the flag is set while parsing
-                    # — and after the text from this chunk is collected, or the
-                    # final delta is dropped and the stream looks empty.
-                    break
                 if capture.has_tool_calls:
                     # A tool-call delta is a valid completion even though it
                     # contains no prose. Do not discard it as an empty answer.
@@ -537,31 +609,8 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
                 # but valid answers are judged from the text that actually
                 # arrived, regardless of how much SSE metadata preceded it.
                 decision = classify_stream("".join(inspected_text))
-                if decision == "empty" and capture.has_reasoning:
-                    # The model produced thinking but no answer: budget
-                    # starvation, not an empty reply. Classifying it as "empty"
-                    # spent a second full generation and sent the client two
-                    # [DONE] markers for one question.
-                    decision = "starved"
 
             may_retry_refusal = config.retry_on_refusal or decision != "refusal"
-            # Budget starvation: retrying at the same budget reproduces it exactly,
-            # so escalate once. Only when there IS a budget to escalate — a caller
-            # that sent none gets the diagnostic instead of an invented ceiling.
-            # Thinking without an answer is starvation even when the provider
-            # forgot to set finish_reason=length: the budget paid for reasoning
-            # and delivered nothing the caller can use.
-            no_answer = (decision == "empty" and capture.has_reasoning)
-            starved = ((decision in ("empty", "starved") and capture.truncated)
-                       or no_answer) and budget_round < config.token_escalation_rounds \
-                and plan.can_retry()
-            if starved:
-                budget_round += 1
-                _abort(stream)
-                _trace(records, ctx, attempt_number, "output-budget-exhausted",
-                       text="".join(capture.text_parts),
-                       error="finish_reason=length with no visible content")
-                continue
             if decision in ("refusal", "empty") and may_retry_refusal and plan.can_retry():
                 # Nothing reached the client yet, so discarding is safe — and
                 # aborting (not draining) is what stops the provider billing.
@@ -578,12 +627,7 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
             try:
                 for chunk in buffered:
                     yield chunk
-                # The first loop may already have seen [DONE]. In that case the
-                # socket can stay open with nothing more coming, and reading it
-                # again blocks forever — the caller sees a hang after a complete
-                # answer (measured: complete SSE ending in [DONE], then 120s of
-                # silence until the client gave up).
-                while not capture.done:
+                while True:
                     chunk = _read_chunk(stream)
                     if not chunk:
                         break
@@ -606,17 +650,51 @@ def run_pipeline_stream(request: ChatRequest, config: Config, *,
             finally:
                 stream.close()
             stream_content += capture.finish()
-            # A stream cut off by max_tokens is not a delivered answer, it is a
-            # fragment. Without this the client received a half-sentence with
-            # verdict "stream" and had no way to tell it apart from success —
-            # reported as "the armour did not work" when the real cause was the
-            # caller's output budget.
-            if capture.truncated:
-                report["truncated"] = True
-                report["verdict"] = "truncated"
             _trace(records, ctx, attempt_number, decision, text=stream_content)
             _record_success(records, ctx, {"choices": [{"message": capture.message(stream_content)}]},
                             report["attempts"], report["verdict"])
             return
 
     return StreamingPipelineResult(iterator=iterator(), report_fn=lambda: dict(report))
+
+
+def _read_chunk(stream) -> bytes:
+    """Return the next chunk from a stream handle or an iterator.
+
+    ``UpstreamStream`` exposes ``read()`` so a caller can stop early without the
+    generator ``finally`` closing the socket. Test doubles and alternative
+    transports may only be iterators, so both shapes are accepted here — at the
+    boundary, once, rather than scattered ``hasattr`` checks.
+    """
+    reader = getattr(stream, "read", None)
+    if reader is not None:
+        return reader()
+    try:
+        return next(stream)
+    except StopIteration:
+        return b""
+
+
+def _abort(stream) -> None:
+    """Stop an upstream stream without letting its failure surface as an error."""
+    abort = getattr(stream, "abort", None)
+    if abort is None:
+        close = getattr(stream, "close", None)
+        if close:
+            try:
+                close()
+            except (OSError, ProxyError):
+                pass
+        return
+    try:
+        abort()
+    except (OSError, ProxyError):
+        pass
+
+
+def _stream_verdict(decision: str, attempt_number: int) -> str:
+    # Already committed: a refusal that could not be retried is a failure, and
+    # calling it "stream" would hide that from the operator.
+    if decision in ("refusal", "empty"):
+        return "retry_failed"
+    return "stream" if attempt_number == 1 else "retry_ok"

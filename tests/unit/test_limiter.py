@@ -9,9 +9,9 @@ class AttemptLimiterTests(unittest.TestCase):
     def test_allows_until_limit(self):
         limiter = AttemptLimiter(max_attempts=3, window_seconds=60)
         for _ in range(3):
-            self.assertTrue(limiter.allowed("203.0.113.9"))
-            limiter.record_failure("203.0.113.9")
-        self.assertFalse(limiter.allowed("203.0.113.9"))
+            self.assertTrue(limiter.allowed("1.2.3.4"))
+            limiter.record_failure("1.2.3.4")
+        self.assertFalse(limiter.allowed("1.2.3.4"))
 
     def test_identities_are_independent(self):
         limiter = AttemptLimiter(max_attempts=1, window_seconds=60)

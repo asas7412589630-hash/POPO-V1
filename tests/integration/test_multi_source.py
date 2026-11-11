@@ -63,16 +63,15 @@ def _serve(tag: str):
     handler = type(f"Upstream{tag}", (TaggedUpstream,), {"tag": tag, "hits": 0})
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server, server.server_address[1], handler, thread
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, server.server_address[1], handler
 
 
 class MultiSourceEndToEndTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.alpha_server, alpha_port, cls.alpha, cls.alpha_thread = _serve("alpha")
-        cls.beta_server, beta_port, cls.beta, cls.beta_thread = _serve("beta")
+        cls.alpha_server, alpha_port, cls.alpha = _serve("alpha")
+        cls.beta_server, beta_port, cls.beta = _serve("beta")
         cls.tmp = tempfile.mkdtemp(prefix="popo_multisrc_")
 
         store = CatalogStore(cls.tmp)
@@ -96,21 +95,14 @@ class MultiSourceEndToEndTests(unittest.TestCase):
             stateq_enabled=False, retry_max=1, allow_private_upstream=True)
         ApiHandler.reset_shared_state()
         ApiHandler.admin_hashes.add(hashlib.sha256(ADMIN.encode()).hexdigest())
-        cls.proxy_thread = threading.Thread(target=cls.proxy.serve_forever, daemon=True)
-        cls.proxy_thread.start()
+        threading.Thread(target=cls.proxy.serve_forever, daemon=True).start()
 
     @classmethod
     def tearDownClass(cls):
         cls.proxy.shutdown()
         cls.proxy.server_close()
-        cls.proxy_thread.join(timeout=2)
-        ApiHandler.reset_shared_state()
         cls.alpha_server.shutdown()
-        cls.alpha_server.server_close()
-        cls.alpha_thread.join(timeout=2)
         cls.beta_server.shutdown()
-        cls.beta_server.server_close()
-        cls.beta_thread.join(timeout=2)
 
     def setUp(self):
         self.alpha.hits = 0

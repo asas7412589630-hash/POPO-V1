@@ -51,14 +51,12 @@ class PoolReuseTests(unittest.TestCase):
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), ConnectionCountingUpstream)
         cls.port = cls.server.server_address[1]
         cls.server.daemon_threads = True
-        cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.server_thread.start()
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.server.server_close()
-        cls.server_thread.join(timeout=2)
 
     def setUp(self):
         ConnectionCountingUpstream.connections = 0
@@ -69,7 +67,6 @@ class PoolReuseTests(unittest.TestCase):
 
     def test_source_reuses_the_socket(self):
         source = UpstreamSource(self._base(), "k", timeout=10)
-        self.addCleanup(source.close)
         for _ in range(3):
             source.send({"model": "m", "messages": []})
         self.assertEqual(ConnectionCountingUpstream.requests, 3)
@@ -79,7 +76,6 @@ class PoolReuseTests(unittest.TestCase):
     def test_factory_returns_the_same_source_for_the_same_config(self):
         config = _config(self._base())
         factory = SourceFactory(config)
-        self.addCleanup(factory.close)
         first = factory("m")
         second = factory("m")
         self.assertIs(first, second, "a per-request pool defeats the purpose")
@@ -87,7 +83,6 @@ class PoolReuseTests(unittest.TestCase):
     def test_factory_rebuilds_when_config_changes(self):
         config = _config(self._base())
         factory = SourceFactory(config)
-        self.addCleanup(factory.close)
         first = factory("m")
         config.upstream_key = ["another-key"]
         second = factory("m")
@@ -96,7 +91,6 @@ class PoolReuseTests(unittest.TestCase):
     def test_factory_reuse_produces_one_connection_across_requests(self):
         config = _config(self._base())
         factory = SourceFactory(config)
-        self.addCleanup(factory.close)
         for _ in range(3):
             factory("m").send({"model": "m", "messages": []})
         self.assertEqual(ConnectionCountingUpstream.requests, 3)

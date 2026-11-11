@@ -58,10 +58,8 @@ class ScriptedSource:
     def __init__(self, bodies):
         self.bodies = list(bodies)
         self.calls = 0
-        self.payloads: list[dict] = []
 
     def send(self, payload, path="/v1/chat/completions"):
-        self.payloads.append(dict(payload))
         index = min(self.calls, len(self.bodies) - 1)
         self.calls += 1
         return type("R", (), {"data": self.bodies[index]})()
@@ -83,22 +81,12 @@ def _run(source, **cfg):
 
 
 class BudgetIsNotRetriedTests(unittest.TestCase):
-    def test_truncation_retries_with_more_room_not_the_same_budget(self):
-        """Superseded 2026-11-11: a starving model gets thinking room.
-
-        The original rule was "do not retry at all" — correct when the retry
-        would carry the same budget, because that reproduces the failure exactly.
-        The operator's rule replaced it: give thinking as much room as it needs.
-        What still must not happen is a retry at the *same* budget.
-        """
+    def test_truncation_does_not_consume_the_retry_budget(self):
         source = ScriptedSource([_truncated_body()])
         with self.assertRaises(ProxyError):
             _run(source)
-        self.assertGreaterEqual(source.calls, 2,
-                                "starvation must be retried with more budget")
-        budgets = [p.get("max_tokens") for p in source.payloads]
-        self.assertEqual(len(set(budgets)), len(budgets),
-                         "every retry must carry a larger budget")
+        self.assertEqual(source.calls, 1,
+                         "a truncated reply must not be retried; the budget is unchanged")
 
     def test_error_names_the_cause_and_the_fix(self):
         source = ScriptedSource([_truncated_body()])
@@ -140,62 +128,3 @@ class BudgetIsNotRetriedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class StreamTruncationTests(unittest.TestCase):
-    """A streamed answer cut off by max_tokens must not be reported as delivered.
-
-    Real report: "客户端没有成功破甲" — the client was a Claude-style client sending
-    a small max_tokens, the proxy streamed a half-sentence, and both sides called
-    it a success. The buffered path already refused to deliver a truncated reply;
-    the streaming path had no notion of ``finish_reason`` at all.
-    """
-
-    def _sse(self, content=None, finish=None):
-        import json as _json
-        choice = {"delta": {} if content is None else {"content": content}}
-        if finish is not None:
-            choice["finish_reason"] = finish
-        return ("data: " + _json.dumps({"choices": [choice]}) + "\n\n").encode()
-
-    def test_capture_records_length(self):
-        from popo.core.stream_capture import SSECapture
-        capture = SSECapture()
-        capture.feed(self._sse("half a sent"))
-        self.assertFalse(capture.truncated)
-        capture.feed(self._sse(None, "length"))
-        self.assertTrue(capture.truncated)
-        self.assertEqual(capture.finish_reason, "length")
-
-    def test_capture_stop_is_not_truncation(self):
-        from popo.core.stream_capture import SSECapture
-        capture = SSECapture()
-        capture.feed(self._sse("complete", "stop"))
-        self.assertFalse(capture.truncated)
-
-    def test_stream_pipeline_reports_truncated(self):
-        from popo.core.pipeline import run_pipeline_stream
-        from popo.core.request import ChatRequest
-
-        class Source:
-            def stream(self, payload, path="/v1/chat/completions"):
-                yield self_sse("cut off mid-sen")
-                yield self_sse(None, "length")
-
-            def close(self):
-                pass
-
-        def self_sse(c, f=None):
-            return self._sse(c, f)
-
-        request = ChatRequest(model="glm-5.3", stream=True,
-                              messages=[{"role": "user", "content": "hi"}])
-        cfg = Config(upstream_host="http://localhost", upstream_key="k",
-                     armor_enabled=False, scrub_enabled=False, stateq_enabled=False,
-                     retry_max=1, retry_budget_seconds=5)
-        result = run_pipeline_stream(request, cfg, source_picker=lambda _m: Source(),
-                                     records=None)
-        list(result.iterator)
-        report = result.report_fn()
-        self.assertEqual(report.get("verdict"), "truncated")
-        self.assertTrue(report.get("truncated"))

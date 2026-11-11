@@ -51,8 +51,7 @@ class DifferentialToolTests(unittest.TestCase):
         """
         import os
         v2_text, v2_blocks = DIFF._v2_prompt("glm-5.3")
-        self.assertEqual(v2_blocks,
-                         ["persona", "glm_53_delivery", "contract"])
+        self.assertEqual(v2_blocks, ["cinder_nodebt", "contract"])
         cwd = os.getcwd()
         try:
             os.chdir("/tmp")
@@ -74,10 +73,11 @@ class DifferentialToolTests(unittest.TestCase):
         finally:
             import os
             os.chdir(v1["cwd"])
-        # Both use the same persona now, so lengths match; the point of this
-        # test is that V2 reads V2's files, which the cwd test above covers.
+        self.assertNotEqual(len(v1_text), len(v2_text),
+                            "V1 still uses the thinking-budget persona"
+                            if len(v1_text) == len(v2_text) else "")
         self.assertIn("10 words max", v1_text.lower())
-        self.assertIn("10 words max", v2_text.lower())
+        self.assertNotIn("10 words max", v2_text.lower())
 
     def test_missing_v1_directory_is_reported(self):
         self.assertIsNone(DIFF._load_v1(""))

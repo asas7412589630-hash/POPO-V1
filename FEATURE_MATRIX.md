@@ -1,7 +1,7 @@
 # POPO-V1 → POPO 2.x 全功能移植矩陣
 
 > 完成標準：每列代表可獨立驗收的使用者能力。標為 DONE 必須有**可執行的測試路徑**。
-> 更新：2026-11-11（2.7.19）
+> 更新：2026-11-10（2.7.7）
 > 此矩陣只涵蓋已列出的功能契約；列項全數 DONE 不等於逐項證明整個 V1 完全等價。
 
 ## 狀態統計
@@ -19,7 +19,7 @@
 | API-01 | OpenAI chat 非串流 | DONE | `test_proxy_mock_upstream`、`test_delivery_decision` |
 | API-02 | OpenAI chat SSE（含 commit point） | DONE | `test_stream_manager`、`test_delivery_decision` |
 | API-03 | Anthropic 非串流轉譯 | DONE | `test_proxy_surface.test_anthropic_non_stream_shape` |
-| API-04 | Anthropic Messages SSE 事件與工具呼叫 | DONE | `tests.unit.test_anthropic_compat`、`tests.integration.test_proxy_surface` |
+| API-04 | Anthropic SSE 轉譯 | DONE | `openai_event_to_anthropic`（`[DONE]` 原樣通過） |
 | API-05 | `x-api-key` 認證 | DONE | `test_anthropic_accepts_x_api_key` |
 | API-06 | Models 發布過濾 | DONE | `test_setup.test_models_filtered_after_publish` |
 | API-07 | Images 直通 | DONE | `test_images_passthrough_reaches_upstream` |

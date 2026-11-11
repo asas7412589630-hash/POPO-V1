@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -43,28 +44,24 @@ class TestUpstreamUrl(unittest.TestCase):
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
+        time.sleep(0.1)
 
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
-        cls.server.server_close()
-        cls.thread.join(timeout=2)
 
     def test_v1_base_url(self):
         src = UpstreamSource(f"http://127.0.0.1:{self.port}/v1", "k")
-        self.addCleanup(src.close)
         src.send({"model": "x", "messages": []})
         self.assertEqual(EchoHandler.requests[-1][0], "/v1/chat/completions")
 
     def test_root_base_url(self):
         src = UpstreamSource(f"http://127.0.0.1:{self.port}", "k")
-        self.addCleanup(src.close)
         src.send({"model": "x", "messages": []})
         self.assertEqual(EchoHandler.requests[-1][0], "/v1/chat/completions")
 
     def test_prefixed_base_url(self):
         src = UpstreamSource(f"http://127.0.0.1:{self.port}/api", "k")
-        self.addCleanup(src.close)
         src.send({"model": "x", "messages": []})
         self.assertEqual(EchoHandler.requests[-1][0], "/api/v1/chat/completions")
 

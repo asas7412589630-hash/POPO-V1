@@ -11,6 +11,7 @@ import json
 import threading
 
 from popo.armor.blocks import build_system_prompt, load_registry, resolve_profile
+from popo.armor.render import render_authoritative_policy
 from popo.config import Config
 from popo.core.pipeline import PipelineResult, run_pipeline, run_pipeline_stream
 from popo.core.request import ChatRequest
@@ -189,14 +190,14 @@ class InferenceService:
                           "context_window": self.config.advertised_context}
                          for model in published]}
 
-    def armor_preview(self, model: str, level: str | None,
-                      profile: str | None = None) -> dict:
-        text, used = build_system_prompt(model, level=level, profile=profile)
-        return {"model": model, "level": level, "profile": profile,
-                "policy_len": len(text), "blocks": used, "content": text}
+    def armor_preview(self, model: str, level: str | None) -> dict:
+        policy_text, used = build_system_prompt(model, level=level)
+        text = render_authoritative_policy(policy_text)
+        return {"model": model, "level": level, "policy_len": len(text),
+                "blocks": used, "content": text}
 
     def armor_registry(self) -> dict:
-        registry = load_registry("blocks")
+        registry = load_registry()
         profiles = registry.get("profiles", {})
         families = registry.get("console_profiles") or [
             {"id": name, "label": item.get("label", name),
@@ -214,8 +215,9 @@ class InferenceService:
                 "levels": sorted(registry.get("levels", {}))}
 
     def profile(self, model: str, level: str | None) -> dict:
-        registry = load_registry("blocks")
-        text, used = build_system_prompt(model, level=level)
+        registry = load_registry()
+        policy_text, used = build_system_prompt(model, level=level)
+        text = render_authoritative_policy(policy_text)
         return {"model": model, "level": level, "blocks": used,
                 "policy_len": len(text), "content": text,
                 "levels": sorted(registry.get("levels", {})),

@@ -7,11 +7,12 @@ budget, and because they exist for one client's shape rather than the product's.
 """
 
 from __future__ import annotations
+import ipaddress
 import os
 import socket
 from urllib.error import URLError
 from urllib.request import urlopen
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 from popo.errors import ErrorKind, ProxyError
 
@@ -58,14 +59,19 @@ class ConsoleRoutes:
                 })
 
         # A tunnel URL counts only if it was configured AND answered a moment ago.
-        public = (self.cfg.public_base or "").rstrip("/")
+        configured_public = (self.cfg.public_base or "").strip().rstrip("/")
         tunnel_file = os.path.join(self.cfg.data_dir, "tunnel_url.txt")
-        if not public and os.path.exists(tunnel_file):
+        if not configured_public and os.path.exists(tunnel_file):
             try:
                 with open(tunnel_file, "r", encoding="utf-8") as handle:
-                    public = handle.read().strip().rstrip("/")
+                    configured_public = handle.read().strip().rstrip("/")
             except OSError:
-                public = ""
+                configured_public = ""
+        # A locally reachable URL is not necessarily public. Reject loopback,
+        # LAN, link-local and split-DNS names before treating it as an external
+        # client address; otherwise a public-scoped key can be handed out with
+        # a URL that only works on this machine or network.
+        public = configured_public if _is_public_base(configured_public) else ""
         public_live = _probe_public_base(public) if public else False
         if public:
             addresses.append({
@@ -81,6 +87,7 @@ class ConsoleRoutes:
             "addresses": addresses,
             "public_base": public if public_live else "",
             "configured_public_base": public,
+            "public_configured": bool(configured_public),
             "tunnel_ok": public_live if public else False,
             "published": public_live,
             "require_client_key": self.cfg.require_client_key,
@@ -116,6 +123,31 @@ class ConsoleRoutes:
 def _probe_public_base(base: str) -> bool:
     """Only offer a public client URL after its health endpoint answers."""
     if not base.startswith(("https://", "http://")):
+        return False
+
+
+def _is_public_base(base: str) -> bool:
+    """Reject internal or malformed URLs before publishing them to clients."""
+    try:
+        parsed = urlsplit(base)
+        if (parsed.scheme not in ("http", "https") or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.query or parsed.fragment or parsed.path not in ("", "/")):
+            return False
+        host = parsed.hostname.rstrip(".").lower()
+        if (host in ("localhost",) or host.endswith((".localhost", ".local",
+                                                       ".internal", ".lan", ".home"))):
+            return False
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            rows = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            addresses = {ipaddress.ip_address(row[4][0].split("%", 1)[0])
+                         for row in rows}
+            return bool(addresses) and all(item.is_global for item in addresses)
+        return address.is_global
+    except (OSError, TypeError, ValueError):
         return False
     try:
         with urlopen(base.rstrip("/") + "/healthz", timeout=2.5) as response:

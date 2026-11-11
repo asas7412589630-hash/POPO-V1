@@ -181,15 +181,7 @@ def compare_blocks(v1, report):
         v2_text, v2_blocks = _v2_prompt(case["model"])
         same = v1_text == v2_text
         expected = ""
-        if not same and "persona" in v1_blocks and "persona" in v2_blocks:
-            # Same character sheet on both sides; V2 adds a measured per-version
-            # delivery overlay (glm_53_delivery / deepseek_v41_delivery) that V1
-            # has no equivalent for. That is an addition, not a divergence in the
-            # persona itself.
-            extra = [b for b in v2_blocks if b not in v1_blocks]
-            expected = (f"V2 appends measured delivery overlay {extra}; the persona "
-                        f"and contract blocks are identical")
-        elif not same and "persona" in v1_blocks and "cinder_nodebt" in v2_blocks:
+        if not same and "persona" in v1_blocks and "cinder_nodebt" in v2_blocks:
             expected = INTENTIONAL_ARMOR_DIFF.get("native_glm",
                                                  "intentional: no thinking budget")
         report.append({

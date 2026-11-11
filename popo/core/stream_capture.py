@@ -13,18 +13,7 @@ class SSECapture:
         self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
         self._pending = ""
         self._finished = False
-        # Providers report why generation stopped in the last chunk. Nothing
-        # recorded it before, so a stream cut off by max_tokens looked exactly
-        # like a complete answer that happened to end mid-sentence.
-        self.finish_reason: str = ""
-        # See _consume_line: [DONE] means no more chunks are coming, and a
-        # provider that holds the socket open afterwards must not hang the caller.
-        self.done: bool = False
         self.text_parts: list[str] = []
-        # Thinking is not an answer, but it proves the model is producing
-        # something. A stream that opens with reasoning must not be mistaken for
-        # an empty completion and retried.
-        self.reasoning_parts: list[str] = []
         self._tool_calls: dict[int, dict] = {}
 
     def feed(self, chunk: bytes) -> str:
@@ -40,15 +29,6 @@ class SSECapture:
         text = self._consume_lines(final=True)
         self._finished = True
         return text
-
-    @property
-    def has_reasoning(self) -> bool:
-        return bool(self.reasoning_parts)
-
-    @property
-    def truncated(self) -> bool:
-        """The provider stopped because the output budget ran out."""
-        return self.finish_reason == "length"
 
     @property
     def has_tool_calls(self) -> bool:
@@ -77,25 +57,12 @@ class SSECapture:
             self.text_parts.append(text)
         return text
 
-    def _note_finish(self, choice: dict) -> None:
-        reason = choice.get("finish_reason")
-        if reason:
-            self.finish_reason = str(reason)
-
     def _consume_line(self, line: str) -> list[str]:
         line = line.rstrip("\r")
         if not line.startswith("data:"):
             return []
         payload = line[5:].strip()
-        if not payload:
-            return []
-        if payload == "[DONE]":
-            # The stream is complete. Record it: providers that keep the socket
-            # open after [DONE] would otherwise leave the caller waiting on a
-            # read that will never return, which presents as a hang rather than
-            # a finished answer (measured 2026-11-11: 151 chunks, then 120s of
-            # silence until the client timed out).
-            self.done = True
+        if not payload or payload == "[DONE]":
             return []
         try:
             event = json.loads(payload)
@@ -107,7 +74,6 @@ class SSECapture:
         for choice in event.get("choices") or []:
             if not isinstance(choice, dict):
                 continue
-            self._note_finish(choice)
             delta = choice.get("delta") or {}
             if not isinstance(delta, dict):
                 continue
@@ -118,16 +84,6 @@ class SSECapture:
             elif isinstance(content, list):
                 added.extend(str(part.get("text") or "") for part in content
                              if isinstance(part, dict) and part.get("text"))
-            # Reasoning arrives as its own delta field, not as content. Without
-            # this the opening of a reasoning stream looks like "no text at all",
-            # which the pipeline classifies as an empty answer and retries — so
-            # one question cost two full generations and the client received two
-            # [DONE] markers (measured 2026-11-11 on glm-5.3).
-            for key in ("reasoning", "reasoning_content"):
-                piece = delta.get(key)
-                if isinstance(piece, str) and piece:
-                    self.reasoning_parts.append(piece)
-                    break
             for position, fragment in enumerate(delta.get("tool_calls") or []):
                 self._merge_tool_call(position, fragment)
         return added

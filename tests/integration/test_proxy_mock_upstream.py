@@ -87,12 +87,7 @@ class TestProxyMockUpstream(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.proxy.shutdown()
-        cls.proxy.server_close()
-        cls.proxy_thread.join(timeout=2)
         cls.upstream.shutdown()
-        cls.upstream.server_close()
-        cls.upstream_thread.join(timeout=2)
-        ApiHandler.reset_shared_state()
 
     def setUp(self):
         MockUpstreamHandler.recorded.clear()
