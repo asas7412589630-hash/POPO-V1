@@ -1,0 +1,80 @@
+#!/bin/sh
+# triad-deploy — set up POPO-V2 for local, VPS or ephemeral deploy.
+# Usage:
+#   triad-deploy                 interactive start
+#   triad-deploy --print         print client config
+#   triad-deploy --systemd       emit systemd unit file
+#   triad-deploy --port PORT     change port
+#   triad-deploy --open          bind 0.0.0.0 (VPS)
+#   triad-deploy --ephemeral     no disk writes
+set -e
+DIR=$(cd "$(dirname "$0")" && pwd)
+BASE="$DIR/.."
+BASE=$(cd "$BASE" && pwd)
+PORT=${POPO_PORT:-8412}
+BIND=127.0.0.1
+MODE=persist
+PRINT_ONLY=0
+EMIT_UNIT=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --port) PORT="$2"; shift 2 ;;
+    --print) PRINT_ONLY=1; shift ;;
+    --systemd) EMIT_UNIT=1; shift ;;
+    --open) BIND=0.0.0.0; shift ;;
+    --ephemeral) MODE=ephemeral; shift ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$EMIT_UNIT" = "1" ]; then
+  cat <<EOF
+[Unit]
+Description=POPO-V2 proxy ($MODE)
+After=network.target
+
+[Service]
+Type=simple
+User=$(id -un)
+WorkingDirectory=$BASE
+Environment=POPO_PORT=$PORT
+Environment=POPO_BIND=$BIND
+Environment=POPO_EPHEMERAL=$( [ "$MODE" = "ephemeral" ] && echo 1 || echo 0 )
+ExecStart=$BASE/scripts/triad-up
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  exit 0
+fi
+
+if [ "$PRINT_ONLY" = "1" ]; then
+  echo "Base URL: http://${BIND}:${PORT}/v1"
+  exit 0
+fi
+
+echo "== POPO-V2 deploy =="
+echo "  mode : $MODE"
+echo "  bind : $BIND"
+echo "  port : $PORT"
+echo
+
+export POPO_PORT="$PORT"
+export POPO_BIND="$BIND"
+[ "$MODE" = "ephemeral" ] && export POPO_EPHEMERAL=1
+
+"$DIR/triad-up"
+
+echo
+if [ "$BIND" = "0.0.0.0" ]; then
+  echo "  console : http://<host>:${PORT}/app/"
+else
+  echo "  console : http://127.0.0.1:${PORT}/app/"
+  echo "  tunnel  : ssh -N -L ${PORT}:127.0.0.1:${PORT} $(id -un)@<host>"
+fi
+echo "  client  : Base URL http://${BIND}:${PORT}/v1"

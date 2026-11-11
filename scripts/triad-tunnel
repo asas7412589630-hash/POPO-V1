@@ -1,0 +1,79 @@
+#!/bin/sh
+# triad-tunnel — expose POPO-V2 on a public URL via cloudflared or srv.us.
+# Usage: triad-tunnel [--status|--restart|--down]
+set -e
+DIR=$(cd "$(dirname "$0")" && pwd)
+BASE="$DIR/.."
+BASE=$(cd "$BASE" && pwd)
+PORT=${POPO_PORT:-8412}
+LOG="$BASE/logs/tunnel.log"
+URLF="$BASE/data/tunnel_url.txt"
+PIDF="$BASE/data/tunnel.pid"
+
+BIN=${CLOUDFLARED:-}
+if [ -z "$BIN" ]; then
+  for c in "$BASE/bin/cloudflared" \
+           "$(command -v cloudflared 2>/dev/null || true)" \
+           "$HOME/cloudflared" \
+           "/usr/local/bin/cloudflared" \
+           "/usr/bin/cloudflared"; do
+    [ -n "$c" ] && [ -x "$c" ] && BIN=$c && break
+  done
+fi
+
+alive() {
+  [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null
+}
+
+show_url() {
+  [ -f "$URLF" ] && cat "$URLF" || echo "(no url)"
+}
+
+case "${1:-}" in
+  --status)
+    if alive; then echo "tunnel running pid=$(cat "$PIDF")"; show_url; else echo "tunnel not running"; fi
+    exit 0 ;;
+  --down)
+    [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null || true
+    rm -f "$PIDF" "$URLF"
+    echo "tunnel down"; exit 0 ;;
+  --restart)
+    [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null || true
+    rm -f "$URLF"
+    sleep 1 ;;
+  --help|-h) echo "usage: triad-tunnel [--status|--restart|--down]"; exit 0 ;;
+  "") if alive; then echo "tunnel already up"; show_url; exit 0; fi ;;
+  *) echo "unknown option: $1" >&2; exit 2 ;;
+esac
+
+if [ -z "$BIN" ]; then
+  echo "cloudflared not found. SRV.US fallback:" >&2
+  echo "  ssh -R 1:127.0.0.1:${PORT} srv.us" >&2
+  exit 1
+fi
+
+mkdir -p "$BASE/logs"
+touch "$LOG"
+MARK=$(wc -l < "$LOG")
+nohup "$BIN" tunnel --no-autoupdate --protocol http2 \
+  --url "http://127.0.0.1:${PORT}" >> "$LOG" 2>&1 &
+echo $! > "$PIDF"
+
+i=0
+while [ "$i" -lt 60 ]; do
+  i=$((i+1))
+  sleep 1
+  CAND=$(tail -n +$((MARK+1)) "$LOG" 2>/dev/null \
+         | grep -oE 'https://[a-z0-9-]+\.(trycloudflare\.com|srv\.us)' | tail -1)
+  [ -z "$CAND" ] && continue
+  HOST=$(echo "$CAND" | sed 's|https://||')
+  if getent hosts "$HOST" >/dev/null 2>&1 && curl -fsS -m 6 "$CAND/healthz" >/dev/null 2>&1; then
+    echo "$CAND" > "$URLF"
+    echo "URL: $CAND"
+    echo "APP: $CAND/app/"
+    exit 0
+  fi
+done
+
+echo "tunnel started but no validated url yet (see $LOG)" >&2
+exit 1

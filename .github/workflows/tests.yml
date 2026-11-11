@@ -6,17 +6,15 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
-  offline-suites:
-    name: offline suites (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+  offline:
+    name: offline (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,166 +23,66 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # The proxy uses only the standard library; this is a guard against a
-      # stray third-party import creeping in, not an install step.
-      - name: no third-party imports
-        run: |
-          python - <<'PY'
-          import ast, pathlib, sys, sysconfig
+      - name: Architecture guardrails
+        run: python tools/architecture_check.py
 
-          # sys.stdlib_module_names exists from 3.10. The matrix includes 3.9,
-          # where reading it raised AttributeError and the whole job died in 14
-          # seconds — before a single test ran. Derive the set from the stdlib
-          # directory layout instead, which works on every version.
-          def stdlib_names():
-              if hasattr(sys, "stdlib_module_names"):
-                  return set(sys.stdlib_module_names)
-              names = set(sys.builtin_module_names)
-              root = pathlib.Path(sysconfig.get_paths()["stdlib"])
-              if not root.is_dir():
-                  return names
-              for p in root.iterdir():
-                  if p.is_dir():
-                      if (p / "__init__.py").is_file():
-                          names.add(p.name)
-                  elif p.suffix == ".py":
-                      names.add(p.stem)
-              # C extension modules live in lib-dynload with no .py source, so a
-              # directory scan misses them: `select`, `_ssl`, `zlib`, `math`,
-              # `_socket` and friends. Read their filenames too, otherwise the
-              # check reports a false positive on the very modules the proxy
-              # depends on.
-              dyn = root / "lib-dynload"
-              if dyn.is_dir():
-                  for p in dyn.iterdir():
-                      stem = p.name.split(".")[0]
-                      if stem:
-                          names.add(stem)
-              # Not stdlib for this purpose: third-party and test scaffolding.
-              for skip in ("site-packages", "dist-packages", "lib-dynload",
-                           "test", "tests", "__pycache__"):
-                  names.discard(skip)
-              return names
+      - name: Release tree hygiene
+        run: python tools/check_release_tree.py --allow-runtime
 
-          std = stdlib_names()
-          local = {p.stem for p in pathlib.Path('.').glob('*.py')}
-          local |= {p.stem for p in pathlib.Path('.').glob('*/*.py')}
-          # Local packages (directories with __init__.py) are not third-party.
-          local |= {p.parent.name for p in pathlib.Path('.').rglob('__init__.py')}
-          # Two guarded imports, both inside try/except, both degrade to None:
-          #   PIL        - image work in adult.py only
-          #   retry_test - an optional probing helper reframe.py uses when a
-          #                caller supplies one; not shipped, explicitly optional
-          ALLOWED = {'PIL', 'retry_test'}
-          bad = {}
-          for p in pathlib.Path('.').rglob('*.py'):
-              if '__pycache__' in p.parts:
-                  continue
-              # examples/ is documentation: it may use an SDK (openai) on purpose,
-              # because showing the SDK is the point of the snippet. The proxy
-              # itself must stay dependency-free.
-              if p.parts[0] == 'examples':
-                  continue
-              try:
-                  tree = ast.parse(p.read_text(encoding='utf-8'))
-              except SyntaxError as e:
-                  bad[str(p)] = 'syntax: %s' % e
-                  continue
-              for node in ast.walk(tree):
-                  names = []
-                  if isinstance(node, ast.Import):
-                      names = [a.name.split('.')[0] for a in node.names]
-                  elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                      names = [node.module.split('.')[0]]
-                  for n in names:
-                      if n not in std and n not in local and n not in ALLOWED:
-                          bad.setdefault(str(p), set()).add(n)
-          if bad:
-              for k, v in bad.items():
-                  print('THIRD-PARTY', k, v)
-              sys.exit(1)
-          print('ok: standard library only')
-          PY
+      - name: Byte-compile
+        run: python -m compileall -q popo console tools tests
 
-      - name: syntax check every module
-        run: python -m compileall -q . -x '__pycache__'
+      - name: Unit tests
+        run: python -m unittest discover -s tests/unit
 
-      - name: run offline suites
-        run: |
-          set -e
-          pass=0; fail=0; failed=""
-          for t in test_*.py; do
-            case "$t" in
-              test_drift.py)
-                # Needs a real provider; covered by the live job.
-                continue ;;
-              test_concurrency.py)
-                out=$(TRIAD_OFFLINE=1 timeout 300 python3 "$t" 4 2>&1) || true ;;
-              test_clients.py)
-                out=$(timeout 250 python3 "$t" --offline 2>&1) || true ;;
-              *)
-                out=$(timeout 250 python3 "$t" 2>&1) || true ;;
-            esac
-            if echo "$out" | grep -qE 'ALL PASS|passed, 0 failed|^OK$'; then
-              pass=$((pass+1)); echo "PASS $t"
-            else
-              fail=$((fail+1)); failed="$failed $t"; echo "FAIL $t"; echo "$out" | tail -20
-            fi
-          done
-          echo "== $pass passed / $fail failed =="
-          [ "$fail" -eq 0 ] || { echo "failed:$failed"; exit 1; }
+      - name: Integration tests
+        run: python -m unittest discover -s tests/integration
 
-  offline-suites-windows:
-    name: offline suites (windows, py${{ matrix.python }})
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.12"]
+      - name: Behaviour parity against V1
+        run: python tests/parity/v1_v2_parity.py
+
+      - name: Capability parity
+        run: python -m unittest discover -s tests/parity -p "test_*.py"
+
+  release:
+    name: release artifact
+    runs-on: ubuntu-latest
+    needs: offline
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
-      - name: syntax check every module
-        run: python -m compileall -q . -x '__pycache__'
-      - name: run offline test suites
-        run: python run_tests.py
+          python-version: "3.12"
 
-  shell-syntax:
-    name: shell syntax
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: sh -n on every script
+      - name: Build the archive twice
         run: |
-          set -e
-          for f in triad-up triad-deploy triad-tunnel run-proxy.sh run-tunnel.sh run-tests.sh; do
-            [ -f "$f" ] || continue
-            echo "checking $f"
-            sh -n "$f"
-          done
+          python tools/build_release.py --output /tmp/first.tar.gz
+          python tools/build_release.py --output /tmp/second.tar.gz
 
-  no-secrets:
-    name: no committed secrets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: keys files must be empty of real values
+      - name: Reproducibility check
         run: |
-          set -e
-          fail=0
-          # The shipped files are comments only. A key here would be a leak.
-          for f in proxy/upstream_keys.txt proxy/client_keys.txt; do
-            [ -f "$f" ] || continue
-            if grep -qvE '^\s*(#|$)' "$f"; then
-              echo "REAL VALUE IN $f"; fail=1
-            fi
-          done
-          if [ -f proxy/keys.json ] && ! grep -qE '"keys"\s*:\s*\[\s*\]' proxy/keys.json; then
-            echo "REAL KEY RECORDS IN proxy/keys.json"; fail=1
-          fi
-          if [ -f proxy/source_secrets.json ] && ! grep -qx '{}' proxy/source_secrets.json; then
-            echo "SECRETS PRESENT IN proxy/source_secrets.json"; fail=1
-          fi
-          exit $fail
+          a=$(sha256sum /tmp/first.tar.gz | cut -d' ' -f1)
+          b=$(sha256sum /tmp/second.tar.gz | cut -d' ' -f1)
+          echo "first=$a"
+          echo "second=$b"
+          test "$a" = "$b"
+
+      - name: Verify the archive as shipped
+        run: |
+          mkdir -p /tmp/unpacked
+          tar -xzf /tmp/first.tar.gz -C /tmp/unpacked
+          cd /tmp/unpacked/POPO-*
+          python tools/check_release_tree.py
+          python tools/architecture_check.py
+          python -m unittest discover -s tests/unit
+          python tests/parity/v1_v2_parity.py
+
+      - name: Publish checksum
+        run: sha256sum /tmp/first.tar.gz | tee release.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: popo-release
+          path: |
+            /tmp/first.tar.gz
+            release.sha256

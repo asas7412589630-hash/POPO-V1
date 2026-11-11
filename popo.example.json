@@ -1,0 +1,30 @@
+{
+  "_comment": [
+    "Copy to popo.json and edit. Every field is optional.",
+    "Environment variables override this file, and POPO_*/ARMOR_* names from 1.x are honoured.",
+    "This file is an example: it is the only configuration file that may ship.",
+    "Never put a real key here. popo.json (the copy you edit) is not part of the release."
+  ],
+  "server": {
+    "bind": "127.0.0.1",
+    "port": 8412,
+    "public_base": ""
+  },
+  "upstream": {
+    "upstream_host": "https://api.example.invalid/v1",
+    "upstream_key": "sk-replace-me"
+  },
+  "auth": {
+    "require_key": true
+  },
+  "records": {
+    "ephemeral": false
+  },
+  "armor": {
+    "enabled": true
+  },
+  "retry": {
+    "retry_max": 8,
+    "retry_budget": 150
+  }
+}

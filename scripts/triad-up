@@ -1,0 +1,52 @@
+#!/bin/sh
+# triad-up — start / restart POPO-V2 proxy.
+# Portable: no absolute install path; works from this directory.
+set -e
+DIR=$(cd "$(dirname "$0")" && pwd)
+PORT=${POPO_PORT:-8412}
+BASE=${POPO_BASE:-"$DIR/.."}
+BASE=$(cd "$BASE" && pwd)
+PIDF="$BASE/.popo.pid"
+
+mkdir -p "$BASE/logs" "$BASE/data"
+
+status() {
+  if [ -f "$PIDF" ]; then
+    PID=$(cat "$PIDF")
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "running pid=$PID port=$PORT"
+      return 0
+    fi
+    rm -f "$PIDF"
+  fi
+  echo "not running"
+  return 1
+}
+
+stop() {
+  if [ -f "$PIDF" ]; then
+    PID=$(cat "$PIDF")
+    kill "$PID" 2>/dev/null || true
+    rm -f "$PIDF"
+    echo "stopped"
+  else
+    echo "not running"
+  fi
+}
+
+case "${1:-}" in
+  --status) status; exit $? ;;
+  --stop) stop; exit 0 ;;
+  --restart) stop; sleep 1 ;;
+  --help|-h) echo "usage: triad-up [--status|--stop|--restart]"; exit 0 ;;
+  "") if status >/dev/null 2>&1; then status; exit 0; fi ;;
+  *) echo "unknown option: $1" >&2; exit 2 ;;
+esac
+
+cd "$BASE"
+export POPO_PORT="$PORT"
+export POPO_DATA_DIR="$BASE/data"
+nohup python3 -m popo.server.app >> "$BASE/logs/triad.log" 2>&1 &
+echo $! > "$PIDF"
+sleep 1
+status

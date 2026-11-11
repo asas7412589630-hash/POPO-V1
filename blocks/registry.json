@@ -8,7 +8,15 @@
     },
     "cinder_nodebt": {
       "file": "10_cinder_nodebt.txt",
-      "desc": "Cinder persona（無 thinking 預算條款，給已在長考的模型）"
+      "desc": "Cinder persona（無 thinking 預算條款；遵從使用者要求的格式，不強制署名）"
+    },
+    "glm_53_delivery": {
+      "file": "15_glm_53_delivery.txt",
+      "desc": "GLM-5.3 輸出格式與工具參數校準"
+    },
+    "deepseek_v41_delivery": {
+      "file": "16_deepseek_v41_delivery.txt",
+      "desc": "DeepSeek V4.1 Flash 結構化輸出校準"
     },
     "persona": {
       "file": "10_persona.txt",
@@ -24,7 +32,15 @@
     },
     "gpt6_luna": {
       "file": "gpt6_luna.txt",
-      "desc": "GPT-6 Luna 專用槓桿（短、執行導向）"
+      "desc": "gpt-6-luna 專用：operator binding + Pelican 身份 + 狀態鎖（未驗證）"
+    },
+    "pelican": {
+      "file": "pelican.txt",
+      "desc": "Pelican 人格（融合版）：身份錨 + 拒絕病理化 + 輸出狀態鎖"
+    },
+    "gpt6_operator": {
+      "file": "gpt6_operator.txt",
+      "desc": "GPT-6 專用：operator binding + 禁詞表（已於 2026 實測有效，4426字零拒絕）"
     }
   },
   "profiles": {
@@ -33,20 +49,61 @@
         "persona",
         "contract"
       ],
-      "desc": "deepseek：完整角色框架 + 交付契約"
+      "family": "deepseek",
+      "label": "DeepSeek",
+      "selectable": true,
+      "desc": "DeepSeek Cinder + 交付契約；V4.1 Flash 自動疊加版本格式校準"
     },
     "native_glm": {
       "blocks": [
         "persona",
         "contract"
       ],
-      "desc": "glm：完整角色框架 + 交付契約"
+      "family": "glm",
+      "label": "GLM",
+      "selectable": true,
+      "desc": "GLM Cinder + 交付契約；GLM-5.3 自動疊加版本格式校準"
+    },
+    "native_glm_53": {
+      "blocks": [
+        "persona",
+        "glm_53_delivery",
+        "contract"
+      ],
+      "family": "glm",
+      "parent": "native_glm",
+      "label": "GLM-5.3（格式校準）",
+      "selectable": false,
+      "desc": "依 GLM-5.3 實測加入 JSON、程式碼與工具呼叫輸出約束"
+    },
+    "native_deepseek_v41": {
+      "blocks": [
+        "persona",
+        "deepseek_v41_delivery",
+        "contract"
+      ],
+      "family": "deepseek",
+      "parent": "native_deepseek",
+      "label": "DeepSeek V4.1 Flash（格式校準）",
+      "selectable": false,
+      "desc": "依 DeepSeek V4.1 Flash 實測加入結構化輸出與工具參數約束"
     },
     "native_gpt": {
       "blocks": [
         "contract"
       ],
+      "label": "GPT-5.2",
+      "selectable": true,
       "desc": "gpt：只有交付契約（原始設定，未經我改動）"
+    },
+    "native_kimi": {
+      "blocks": [
+        "persona",
+        "contract"
+      ],
+      "label": "Kimi（通用契約）",
+      "selectable": true,
+      "desc": "角色框架 + 交付契約（實測：純契約無效）"
     },
     "native_gpt6_luna": {
       "blocks": [
@@ -59,14 +116,16 @@
       "blocks": [
         "contract"
       ],
-      "desc": "未知模型的安全預設：絕不套別家 persona"
+      "label": "國模通用",
+      "selectable": true,
+      "desc": "國模通用：只注入交付契約（操作者明確選擇時）"
     },
     "full": {
       "blocks": [
         "persona",
         "contract"
       ],
-      "desc": "加壓。GPT 家族自動改用多槓桿組"
+      "desc": "加壓。GPT 家族自動改用多槓桿組（改用無思考預算的 cinder_nodebt）"
     },
     "lean": {
       "blocks": [
@@ -76,9 +135,61 @@
     },
     "off": {
       "blocks": [],
+      "label": "不注入",
+      "selectable": true,
       "desc": "不注入任何破甲（完全拔掉）"
+    },
+    "native_pelican": {
+      "blocks": [
+        "pelican",
+        "contract"
+      ],
+      "label": "Pelican（融合人格）",
+      "selectable": true,
+      "desc": "Pelican：Maker 造的人格，含 anchor/press/state 三機制"
+    },
+    "native_gpt6": {
+      "blocks": [
+        "gpt6_operator",
+        "contract"
+      ],
+      "label": "GPT-6（operator binding·已驗證）",
+      "selectable": true,
+      "desc": "沿用 armor_lib/gpt6 實測有效的 operator-binding 路線"
     }
   },
+  "console_profiles": [
+    {
+      "id": "native_deepseek",
+      "label": "DeepSeek",
+      "desc": "角色框架 + 交付契約"
+    },
+    {
+      "id": "native_glm",
+      "label": "GLM",
+      "desc": "角色框架 + 交付契約"
+    },
+    {
+      "id": "native_kimi",
+      "label": "Kimi（通用契約）",
+      "desc": "使用中性契約，不套其他家族的人設"
+    },
+    {
+      "id": "native_contract",
+      "label": "國模通用",
+      "desc": "只注入通用交付契約"
+    },
+    {
+      "id": "off",
+      "label": "不注入",
+      "desc": "完全不插入 system prompt"
+    },
+    {
+      "id": "native_gpt",
+      "label": "GPT-5.2",
+      "desc": "只套用交付契約"
+    }
+  ],
   "levels": {
     "native": {
       "profile": null,
@@ -98,6 +209,34 @@
     }
   },
   "models": [
+    {
+      "match": "gpt-6-*",
+      "profile": "native_gpt6",
+      "desc": "已驗證的 operator binding"
+    },
+    {
+      "match": "gpt-6-luna",
+      "profile": "native_gpt6_luna",
+      "desc": "Pelican 造型（未驗證，等額度）"
+    },
+    {
+      "match": "qwen-*",
+      "profile": "native_pelican"
+    },
+    {
+      "match": "qwen",
+      "profile": "native_pelican",
+      "desc": "實測破甲成功"
+    },
+    {
+      "match": "gemma-*",
+      "profile": "native_pelican"
+    },
+    {
+      "match": "gemma",
+      "profile": "native_pelican",
+      "desc": "實測破甲成功（8輪零漂移）"
+    },
     {
       "match": "deepseek",
       "profile": "native_deepseek",
@@ -125,15 +264,15 @@
     },
     {
       "match": "deepseek-v4.1-flash-1017",
-      "profile": "native_deepseek"
+      "profile": "native_deepseek_v41"
     },
     {
       "match": "glm-5.3",
-      "profile": "native_glm"
+      "profile": "native_glm_53"
     },
     {
       "match": "glm-5.3-flash",
-      "profile": "native_glm"
+      "profile": "native_glm_53"
     },
     {
       "match": "gpt-5.2_critique",
@@ -142,6 +281,18 @@
     {
       "match": "gpt-5.2-chat",
       "profile": "native_gpt"
+    },
+    {
+      "match": "kimi",
+      "profile": "native_kimi"
+    },
+    {
+      "match": "kimi-*",
+      "profile": "native_kimi"
+    },
+    {
+      "match": "moonshot-*",
+      "profile": "native_kimi"
     },
     {
       "match": "glm-*",
@@ -157,10 +308,12 @@
       "profile": "native_gpt"
     }
   ],
-  "default_profile": "native_contract",
+  "default_profile": "native_glm",
   "sentinels": [
     "<|start|>system:<instructions>",
     "<policy runtime=\"compile\"",
+    "<profile glm-5.3-delivery>",
+    "<profile deepseek-v4.1-delivery>",
     "<operating-rules version=",
     "# GPT-6 Luna lever"
   ],
@@ -172,6 +325,17 @@
     "★ 兩套破甲系統不可混用（2026-11-04）：OpenAI 家族 = 多槓桿（gpt_guard + gpt6_luna + contract）；其他（glm/deepseek）= 角色框架（cinder_nodebt + contract）。armor_blocks._profile_guard() 會強制分家，連 X-Armor-Level: full 也無法跨越。",
     "10_persona.txt 含「10 words max」思考預算，只保留為歷史版本；非 GPT 一律用 10_cinder_nodebt.txt（無思考預算）。",
     "★ gpt 家族只保留 gpt-5.2（2026-11-04）。gpt-6-luna / gpt-4.1 不再對應任何 profile。",
-    "★ 思考預算只給 gpt-5.2（max_tokens floor 2000，2026-10-31 實測值）。glm / deepseek / 其他 gpt 一律不設 effort、不拉高 max_tokens。"
-  ]
+    "★ 思考預算只給 gpt-5.2（max_tokens floor 2000，2026-10-31 實測值）。glm / deepseek / 其他 gpt 一律不設 effort、不拉高 max_tokens。",
+    "★ 2026-11-10：控制台選擇 GLM / DeepSeek 家族時會疊加同家族、具 parent 的精確模型格式 profile；off 和 generic profile 仍作為明確覆寫。",
+    "★ 2026-11-10：恢復以 10_persona.txt（完整 Cinder 33KB）為非 GPT 家族的角色框架。2.7.8 曾以 18 行摘要取代它並丟棄思考預算與原始設計；使用者要求改回。glm_53_delivery / deepseek_v41_delivery 為版本格式校準，保留為疊加層。",
+    "★ 2026-11-11：Kimi 改用 persona + contract。先前指向 native_kimi（只有 contract），實測回答「我是一個人工智慧助手」，破甲未生效。",
+    "★ 2026-11-11：default_profile 由 native_contract 改為 native_glm，未列出的模型（gemma/qwen 等）預設套用角色框架；要純契約請在控制台選「國模通用」。"
+  ],
+  "invariants": {
+    "no_thinking_budget_profiles": [
+      "native_gpt",
+      "native_kimi",
+      "lean"
+    ]
+  }
 }
